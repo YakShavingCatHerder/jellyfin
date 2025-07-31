@@ -1,8 +1,5 @@
-#pragma warning disable CS1591
-#nullable enable
-
-using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace Emby.Naming.Video
@@ -12,28 +9,42 @@ namespace Emby.Naming.Video
     /// </summary>
     public static class CleanStringParser
     {
-        public static bool TryClean(string name, IReadOnlyList<Regex> expressions, out ReadOnlySpan<char> newName)
+        /// <summary>
+        /// Attempts to extract clean name with regular expressions.
+        /// </summary>
+        /// <param name="name">Name of file.</param>
+        /// <param name="expressions">List of regex to parse name and year from.</param>
+        /// <param name="newName">Parsing result string.</param>
+        /// <returns>True if parsing was successful.</returns>
+        public static bool TryClean([NotNullWhen(true)] string? name, IReadOnlyList<Regex> expressions, out string newName)
         {
-            var len = expressions.Count;
-            for (int i = 0; i < len; i++)
+            if (string.IsNullOrEmpty(name))
+            {
+                newName = string.Empty;
+                return false;
+            }
+
+            // Iteratively apply the regexps to clean the string.
+            bool cleaned = false;
+            for (int i = 0; i < expressions.Count; i++)
             {
                 if (TryClean(name, expressions[i], out newName))
                 {
-                    return true;
+                    cleaned = true;
+                    name = newName;
                 }
             }
 
-            newName = ReadOnlySpan<char>.Empty;
-            return false;
+            newName = cleaned ? name : string.Empty;
+            return cleaned;
         }
 
-        private static bool TryClean(string name, Regex expression, out ReadOnlySpan<char> newName)
+        private static bool TryClean(string name, Regex expression, out string newName)
         {
             var match = expression.Match(name);
-            int index = match.Index;
-            if (match.Success && index != 0)
+            if (match.Success && match.Groups.TryGetValue("cleaned", out var cleaned))
             {
-                newName = name.AsSpan().Slice(0, match.Index);
+                newName = cleaned.Value;
                 return true;
             }
 

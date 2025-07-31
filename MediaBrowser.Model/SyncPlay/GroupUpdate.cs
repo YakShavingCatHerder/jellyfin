@@ -1,28 +1,39 @@
-#nullable disable
+using System;
 
-namespace MediaBrowser.Model.SyncPlay
+namespace MediaBrowser.Model.SyncPlay;
+
+/// <summary>
+/// Group update without data.
+/// </summary>
+/// <typeparam name="T">The type of the update data.</typeparam>
+public abstract class GroupUpdate<T>
 {
     /// <summary>
-    /// Class GroupUpdate.
+    /// Initializes a new instance of the <see cref="GroupUpdate{T}"/> class.
     /// </summary>
-    public class GroupUpdate<T>
+    /// <param name="groupId">The group identifier.</param>
+    /// <param name="data">The update data.</param>
+    protected GroupUpdate(Guid groupId, T data)
     {
-        /// <summary>
-        /// Gets or sets the group identifier.
-        /// </summary>
-        /// <value>The group identifier.</value>
-        public string GroupId { get; set; }
-
-        /// <summary>
-        /// Gets or sets the update type.
-        /// </summary>
-        /// <value>The update type.</value>
-        public GroupUpdateType Type { get; set; }
-
-        /// <summary>
-        /// Gets or sets the data.
-        /// </summary>
-        /// <value>The data.</value>
-        public T Data { get; set; }
+        GroupId = groupId;
+        Data = data;
     }
+
+    /// <summary>
+    /// Gets the group identifier.
+    /// </summary>
+    /// <value>The group identifier.</value>
+    public Guid GroupId { get; }
+
+    /// <summary>
+    /// Gets the update data.
+    /// </summary>
+    /// <value>The update data.</value>
+    public T Data { get; }
+
+    /// <summary>
+    /// Gets the update type.
+    /// </summary>
+    /// <value>The update type.</value>
+    public abstract GroupUpdateType Type { get; }
 }

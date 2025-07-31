@@ -1,10 +1,13 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Jellyfin.Data.Entities;
 using Jellyfin.Data.Events;
+using Jellyfin.Data.Queries;
+using Jellyfin.Database.Implementations;
+using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Model.Activity;
 using MediaBrowser.Model.Querying;
+using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Server.Implementations.Activity
 {
@@ -13,78 +16,85 @@ namespace Jellyfin.Server.Implementations.Activity
     /// </summary>
     public class ActivityManager : IActivityManager
     {
-        private readonly JellyfinDbProvider _provider;
+        private readonly IDbContextFactory<JellyfinDbContext> _provider;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ActivityManager"/> class.
         /// </summary>
         /// <param name="provider">The Jellyfin database provider.</param>
-        public ActivityManager(JellyfinDbProvider provider)
+        public ActivityManager(IDbContextFactory<JellyfinDbContext> provider)
         {
             _provider = provider;
         }
 
         /// <inheritdoc/>
-        public event EventHandler<GenericEventArgs<ActivityLogEntry>> EntryCreated;
+        public event EventHandler<GenericEventArgs<ActivityLogEntry>>? EntryCreated;
 
         /// <inheritdoc/>
         public async Task CreateAsync(ActivityLog entry)
         {
-            await using var dbContext = _provider.CreateContext();
-
-            dbContext.ActivityLogs.Add(entry);
-            await dbContext.SaveChangesAsync().ConfigureAwait(false);
+            var dbContext = await _provider.CreateDbContextAsync().ConfigureAwait(false);
+            await using (dbContext.ConfigureAwait(false))
+            {
+                dbContext.ActivityLogs.Add(entry);
+                await dbContext.SaveChangesAsync().ConfigureAwait(false);
+            }
 
             EntryCreated?.Invoke(this, new GenericEventArgs<ActivityLogEntry>(ConvertToOldModel(entry)));
         }
 
         /// <inheritdoc/>
-        public QueryResult<ActivityLogEntry> GetPagedResult(
-            Func<IQueryable<ActivityLog>, IQueryable<ActivityLog>> func,
-            int? startIndex,
-            int? limit)
+        public async Task<QueryResult<ActivityLogEntry>> GetPagedResultAsync(ActivityLogQuery query)
         {
-            using var dbContext = _provider.CreateContext();
-
-            var query = func(dbContext.ActivityLogs.OrderByDescending(entry => entry.DateCreated));
-
-            if (startIndex.HasValue)
+            var dbContext = await _provider.CreateDbContextAsync().ConfigureAwait(false);
+            await using (dbContext.ConfigureAwait(false))
             {
-                query = query.Skip(startIndex.Value);
+                var entries = dbContext.ActivityLogs
+                    .OrderByDescending(entry => entry.DateCreated)
+                    .Where(entry => query.MinDate == null || entry.DateCreated >= query.MinDate)
+                    .Where(entry => !query.HasUserId.HasValue || entry.UserId.Equals(default) != query.HasUserId.Value);
+
+                return new QueryResult<ActivityLogEntry>(
+                    query.Skip,
+                    await entries.CountAsync().ConfigureAwait(false),
+                    await entries
+                        .Skip(query.Skip ?? 0)
+                        .Take(query.Limit ?? 100)
+                        .Select(entity => new ActivityLogEntry(entity.Name, entity.Type, entity.UserId)
+                        {
+                            Id = entity.Id,
+                            Overview = entity.Overview,
+                            ShortOverview = entity.ShortOverview,
+                            ItemId = entity.ItemId,
+                            Date = entity.DateCreated,
+                            Severity = entity.LogSeverity
+                        })
+                        .ToListAsync()
+                        .ConfigureAwait(false));
             }
-
-            if (limit.HasValue)
-            {
-                query = query.Take(limit.Value);
-            }
-
-            // This converts the objects from the new database model to the old for compatibility with the existing API.
-            var list = query.Select(ConvertToOldModel).ToList();
-
-            return new QueryResult<ActivityLogEntry>
-            {
-                Items = list,
-                TotalRecordCount = func(dbContext.ActivityLogs).Count()
-            };
         }
 
-        /// <inheritdoc/>
-        public QueryResult<ActivityLogEntry> GetPagedResult(int? startIndex, int? limit)
+        /// <inheritdoc />
+        public async Task CleanAsync(DateTime startDate)
         {
-            return GetPagedResult(logs => logs, startIndex, limit);
+            var dbContext = await _provider.CreateDbContextAsync().ConfigureAwait(false);
+            await using (dbContext.ConfigureAwait(false))
+            {
+                await dbContext.ActivityLogs
+                    .Where(entry => entry.DateCreated <= startDate)
+                    .ExecuteDeleteAsync()
+                    .ConfigureAwait(false);
+            }
         }
 
         private static ActivityLogEntry ConvertToOldModel(ActivityLog entry)
         {
-            return new ActivityLogEntry
+            return new ActivityLogEntry(entry.Name, entry.Type, entry.UserId)
             {
                 Id = entry.Id,
-                Name = entry.Name,
                 Overview = entry.Overview,
                 ShortOverview = entry.ShortOverview,
-                Type = entry.Type,
                 ItemId = entry.ItemId,
-                UserId = entry.UserId,
                 Date = entry.DateCreated,
                 Severity = entry.LogSeverity
             };

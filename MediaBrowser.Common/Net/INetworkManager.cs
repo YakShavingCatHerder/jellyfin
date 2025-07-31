@@ -1,97 +1,133 @@
-#pragma warning disable CS1591
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.NetworkInformation;
+using MediaBrowser.Model.Net;
+using Microsoft.AspNetCore.Http;
 
 namespace MediaBrowser.Common.Net
 {
+    /// <summary>
+    /// Interface for the NetworkManager class.
+    /// </summary>
     public interface INetworkManager
     {
+        /// <summary>
+        /// Event triggered on network changes.
+        /// </summary>
         event EventHandler NetworkChanged;
 
         /// <summary>
-        /// Gets or sets a function to return the list of user defined LAN addresses.
+        /// Gets a value indicating whether IPv4 is enabled.
         /// </summary>
-        Func<string[]> LocalSubnetsFn { get; set; }
+        bool IsIPv4Enabled { get; }
 
         /// <summary>
-        /// Gets a random port TCP number that is currently available.
+        /// Gets a value indicating whether IPv6 is enabled.
         /// </summary>
-        /// <returns>System.Int32.</returns>
-        int GetRandomUnusedTcpPort();
+        bool IsIPv6Enabled { get; }
 
         /// <summary>
-        /// Gets a random port UDP number that is currently available.
+        /// Calculates the list of interfaces to use for Kestrel.
         /// </summary>
-        /// <returns>System.Int32.</returns>
-        int GetRandomUnusedUdpPort();
+        /// <returns>A IReadOnlyList{IPData} object containing all the interfaces to bind.
+        /// If all the interfaces are specified, and none are excluded, it returns zero items
+        /// to represent any address.</returns>
+        /// <param name="individualInterfaces">When false, return <see cref="IPAddress.Any"/> or <see cref="IPAddress.IPv6Any"/> for all interfaces.</param>
+        IReadOnlyList<IPData> GetAllBindInterfaces(bool individualInterfaces = false);
 
         /// <summary>
-        /// Returns the MAC Address from first Network Card in Computer.
+        /// Returns a list containing the loopback interfaces.
         /// </summary>
-        /// <returns>The MAC Address.</returns>
-        List<PhysicalAddress> GetMacAddresses();
+        /// <returns>IReadOnlyList{IPData}.</returns>
+        IReadOnlyList<IPData> GetLoopbacks();
 
         /// <summary>
-        /// Determines whether [is in private address space] [the specified endpoint].
+        /// Retrieves the bind address to use in system URLs. (Server Discovery, PlayTo, LiveTV, SystemInfo)
+        /// If no bind addresses are specified, an internal interface address is selected.
+        /// The priority of selection is as follows:-
+        ///
+        /// The value contained in the startup parameter --published-server-url.
+        ///
+        /// If the user specified custom subnet overrides, the correct subnet for the source address.
+        ///
+        /// If the user specified bind interfaces to use:-
+        ///  The bind interface that contains the source subnet.
+        ///  The first bind interface specified that suits best first the source's endpoint. eg. external or internal.
+        ///
+        /// If the source is from a public subnet address range and the user hasn't specified any bind addresses:-
+        ///  The first public interface that isn't a loopback and contains the source subnet.
+        ///  The first public interface that isn't a loopback.
+        ///  The first internal interface that isn't a loopback.
+        ///
+        /// If the source is from a private subnet address range and the user hasn't specified any bind addresses:-
+        ///  The first private interface that contains the source subnet.
+        ///  The first private interface that isn't a loopback.
+        ///
+        /// If no interfaces meet any of these criteria, then a loopback address is returned.
+        ///
+        /// Interfaces that have been specifically excluded from binding are not used in any of the calculations.
         /// </summary>
-        /// <param name="endpoint">The endpoint.</param>
-        /// <returns><c>true</c> if [is in private address space] [the specified endpoint]; otherwise, <c>false</c>.</returns>
-        bool IsInPrivateAddressSpace(string endpoint);
+        /// <param name="source">Source of the request.</param>
+        /// <param name="port">Optional port returned, if it's part of an override.</param>
+        /// <returns>IP address to use, or loopback address if all else fails.</returns>
+        string GetBindAddress(HttpRequest source, out int? port);
 
         /// <summary>
-        /// Determines whether [is in private address space 10.x.x.x] [the specified endpoint] and exists in the subnets returned by GetSubnets().
+        /// Retrieves the bind address to use in system URLs. (Server Discovery, PlayTo, LiveTV, SystemInfo)
+        /// If no bind addresses are specified, an internal interface address is selected.
         /// </summary>
-        /// <param name="endpoint">The endpoint.</param>
-        /// <returns><c>true</c> if [is in private address space 10.x.x.x] [the specified endpoint]; otherwise, <c>false</c>.</returns>
-        bool IsInPrivateAddressSpaceAndLocalSubnet(string endpoint);
+        /// <param name="source">IP address of the request.</param>
+        /// <param name="port">Optional port returned, if it's part of an override.</param>
+        /// <param name="skipOverrides">Optional boolean denoting if published server overrides should be ignored. Defaults to false.</param>
+        /// <returns>IP address to use, or loopback address if all else fails.</returns>
+        string GetBindAddress(IPAddress? source, out int? port, bool skipOverrides = false);
 
         /// <summary>
-        /// Determines whether [is in local network] [the specified endpoint].
+        /// Retrieves the bind address to use in system URLs. (Server Discovery, PlayTo, LiveTV, SystemInfo)
+        /// If no bind addresses are specified, an internal interface address is selected.
+        /// (See <see cref="GetBindAddress(IPAddress, out int?, bool)"/>.
         /// </summary>
-        /// <param name="endpoint">The endpoint.</param>
-        /// <returns><c>true</c> if [is in local network] [the specified endpoint]; otherwise, <c>false</c>.</returns>
-        bool IsInLocalNetwork(string endpoint);
+        /// <param name="source">Source of the request.</param>
+        /// <param name="port">Optional port returned, if it's part of an override.</param>
+        /// <returns>IP address to use, or loopback address if all else fails.</returns>
+        string GetBindAddress(string source, out int? port);
 
         /// <summary>
-        /// Investigates an caches a list of interface addresses, excluding local link and LAN excluded addresses.
+        /// Returns true if the address is part of the user defined LAN.
         /// </summary>
-        /// <returns>The list of ipaddresses.</returns>
-        IPAddress[] GetLocalIpAddresses();
+        /// <param name="address">IP to check.</param>
+        /// <returns>True if endpoint is within the LAN range.</returns>
+        bool IsInLocalNetwork(string address);
 
         /// <summary>
-        /// Checks if the given address falls within the ranges given in [subnets]. The addresses in subnets can be hosts or subnets in the CIDR format.
+        /// Returns true if the address is part of the user defined LAN.
         /// </summary>
-        /// <param name="addressString">The address to check.</param>
-        /// <param name="subnets">If true, check against addresses in the LAN settings surrounded by brackets ([]).</param>
-        /// <returns><c>true</c>if the address is in at least one of the given subnets, <c>false</c> otherwise.</returns>
-        bool IsAddressInSubnets(string addressString, string[] subnets);
+        /// <param name="address">IP to check.</param>
+        /// <returns>True if endpoint is within the LAN range.</returns>
+        bool IsInLocalNetwork(IPAddress address);
 
         /// <summary>
-        /// Returns true if address is in the LAN list in the config file.
+        /// Attempts to convert the interface name to an IP address.
+        /// eg. "eth1", or "enp3s5".
         /// </summary>
-        /// <param name="address">The address to check.</param>
-        /// <param name="excludeInterfaces">If true, check against addresses in the LAN settings which have [] arroud and return true if it matches the address give in address.</param>
-        /// <param name="excludeRFC">If true, returns false if address is in the 127.x.x.x or 169.128.x.x range.</param>
-        /// <returns><c>false</c>if the address isn't in the LAN list, <c>true</c> if the address has been defined as a LAN address.</returns>
-        bool IsAddressInSubnets(IPAddress address, bool excludeInterfaces, bool excludeRFC);
+        /// <param name="intf">Interface name.</param>
+        /// <param name="result">Resulting object's IP addresses, if successful.</param>
+        /// <returns>Success of the operation.</returns>
+        bool TryParseInterface(string intf, [NotNullWhen(true)] out IReadOnlyList<IPData>? result);
 
         /// <summary>
-        /// Checks if address is in the LAN list in the config file.
+        /// Returns all internal (LAN) bind interface addresses.
         /// </summary>
-        /// <param name="address1">Source address to check.</param>
-        /// <param name="address2">Destination address to check against.</param>
-        /// <param name="subnetMask">Destination subnet to check against.</param>
-        /// <returns><c>true/false</c>depending on whether address1 is in the same subnet as IPAddress2 with subnetMask.</returns>
-        bool IsInSameSubnet(IPAddress address1, IPAddress address2, IPAddress subnetMask);
+        /// <returns>An list of internal (LAN) interfaces addresses.</returns>
+        IReadOnlyList<IPData> GetInternalBindAddresses();
 
         /// <summary>
-        /// Returns the subnet mask of an interface with the given address.
+        /// Checks if <paramref name="remoteIP"/> has access to the server.
         /// </summary>
-        /// <param name="address">The address to check.</param>
-        /// <returns>Returns the subnet mask of an interface with the given address, or null if an interface match cannot be found.</returns>
-        IPAddress GetLocalIpSubnetMask(IPAddress address);
+        /// <param name="remoteIP">IP address of the client.</param>
+        /// <returns>The result of evaluating the access policy, <c>Allow</c> if it should be allowed.</returns>
+        RemoteAccessPolicyResult ShouldAllowServerAccess(IPAddress remoteIP);
     }
 }

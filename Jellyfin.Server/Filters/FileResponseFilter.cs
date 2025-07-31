@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using Jellyfin.Api.Attributes;
 using Microsoft.OpenApi.Models;
@@ -14,7 +14,8 @@ namespace Jellyfin.Server.Filters
         {
             Schema = new OpenApiSchema
             {
-                Type = "file"
+                Type = "string",
+                Format = "binary"
             }
         };
 
@@ -26,22 +27,22 @@ namespace Jellyfin.Server.Filters
                 if (attribute is ProducesFileAttribute producesFileAttribute)
                 {
                     // Get operation response values.
-                    var (_, value) = operation.Responses
+                    var response = operation.Responses
                         .FirstOrDefault(o => o.Key.Equals(SuccessCode, StringComparison.Ordinal));
 
                     // Operation doesn't have a response.
-                    if (value == null)
+                    if (response.Value is null)
                     {
                         continue;
                     }
 
                     // Clear existing responses.
-                    value.Content.Clear();
+                    response.Value.Content.Clear();
 
                     // Add all content-types as file.
-                    foreach (var contentType in producesFileAttribute.GetContentTypes())
+                    foreach (var contentType in producesFileAttribute.ContentTypes)
                     {
-                        value.Content.Add(contentType, _openApiMediaType);
+                        response.Value.Content.Add(contentType, _openApiMediaType);
                     }
 
                     break;

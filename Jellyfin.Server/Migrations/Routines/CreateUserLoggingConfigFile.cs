@@ -12,7 +12,10 @@ namespace Jellyfin.Server.Migrations.Routines
     /// If the deprecated logging.json file exists and has a custom config, it will be used as logging.user.json,
     /// otherwise a blank file will be created.
     /// </summary>
+#pragma warning disable CS0618 // Type or member is obsolete
+    [JellyfinMigration("2025-04-20T06:00:00", nameof(CreateUserLoggingConfigFile), "EF103419-8451-40D8-9F34-D1A8E93A1679")]
     internal class CreateUserLoggingConfigFile : IMigrationRoutine
+#pragma warning restore CS0618 // Type or member is obsolete
     {
         /// <summary>
         /// File history for logging.json as existed during this migration creation. The contents for each has been minified.
@@ -43,15 +46,6 @@ namespace Jellyfin.Server.Migrations.Routines
         }
 
         /// <inheritdoc/>
-        public Guid Id => Guid.Parse("{EF103419-8451-40D8-9F34-D1A8E93A1679}");
-
-        /// <inheritdoc/>
-        public string Name => "CreateLoggingConfigHeirarchy";
-
-        /// <inheritdoc/>
-        public bool PerformOnNewInstall => false;
-
-        /// <inheritdoc/>
         public void Perform()
         {
             var logDirectory = _appPaths.ConfigurationDirectoryPath;
@@ -75,7 +69,7 @@ namespace Jellyfin.Server.Migrations.Routines
         {
             var existingConfigJson = JToken.Parse(File.ReadAllText(oldConfigPath));
             return _defaultConfigHistory
-                .Select(historicalConfigText => JToken.Parse(historicalConfigText))
+                .Select(JToken.Parse)
                 .Any(historicalConfigJson => JToken.DeepEquals(existingConfigJson, historicalConfigJson));
         }
     }

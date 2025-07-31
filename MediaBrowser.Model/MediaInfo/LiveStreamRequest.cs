@@ -2,6 +2,7 @@
 #pragma warning disable CS1591
 
 using System;
+using System.Collections.Generic;
 using MediaBrowser.Model.Dlna;
 
 namespace MediaBrowser.Model.MediaInfo
@@ -12,23 +13,8 @@ namespace MediaBrowser.Model.MediaInfo
         {
             EnableDirectPlay = true;
             EnableDirectStream = true;
+            AlwaysBurnInSubtitleWhenTranscoding = false;
             DirectPlayProtocols = new MediaProtocol[] { MediaProtocol.Http };
-        }
-
-        public LiveStreamRequest(AudioOptions options)
-        {
-            MaxStreamingBitrate = options.MaxBitrate;
-            ItemId = options.ItemId;
-            DeviceProfile = options.Profile;
-            MaxAudioChannels = options.MaxAudioChannels;
-
-            DirectPlayProtocols = new MediaProtocol[] { MediaProtocol.Http };
-
-            if (options is VideoOptions videoOptions)
-            {
-                AudioStreamIndex = videoOptions.AudioStreamIndex;
-                SubtitleStreamIndex = videoOptions.SubtitleStreamIndex;
-            }
         }
 
         public string OpenToken { get; set; }
@@ -37,7 +23,7 @@ namespace MediaBrowser.Model.MediaInfo
 
         public string PlaySessionId { get; set; }
 
-        public long? MaxStreamingBitrate { get; set; }
+        public int? MaxStreamingBitrate { get; set; }
 
         public long? StartTimeTicks { get; set; }
 
@@ -55,6 +41,8 @@ namespace MediaBrowser.Model.MediaInfo
 
         public bool EnableDirectStream { get; set; }
 
-        public MediaProtocol[] DirectPlayProtocols { get; set; }
+        public bool AlwaysBurnInSubtitleWhenTranscoding { get; set; }
+
+        public IReadOnlyList<MediaProtocol> DirectPlayProtocols { get; set; }
     }
 }

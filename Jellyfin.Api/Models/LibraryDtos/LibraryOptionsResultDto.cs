@@ -1,34 +1,40 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System;
+using System.Collections.Generic;
 
-namespace Jellyfin.Api.Models.LibraryDtos
+namespace Jellyfin.Api.Models.LibraryDtos;
+
+/// <summary>
+/// Library options result dto.
+/// </summary>
+public class LibraryOptionsResultDto
 {
     /// <summary>
-    /// Library options result dto.
+    /// Gets or sets the metadata savers.
     /// </summary>
-    public class LibraryOptionsResultDto
-    {
-        /// <summary>
-        /// Gets or sets the metadata savers.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "MetadataSavers", Justification = "Imported from ServiceStack")]
-        public LibraryOptionInfoDto[] MetadataSavers { get; set; } = null!;
+    public IReadOnlyList<LibraryOptionInfoDto> MetadataSavers { get; set; } = Array.Empty<LibraryOptionInfoDto>();
 
-        /// <summary>
-        /// Gets or sets the metadata readers.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "MetadataReaders", Justification = "Imported from ServiceStack")]
-        public LibraryOptionInfoDto[] MetadataReaders { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the metadata readers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> MetadataReaders { get; set; } = Array.Empty<LibraryOptionInfoDto>();
 
-        /// <summary>
-        /// Gets or sets the subtitle fetchers.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "SubtitleFetchers", Justification = "Imported from ServiceStack")]
-        public LibraryOptionInfoDto[] SubtitleFetchers { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the subtitle fetchers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> SubtitleFetchers { get; set; } = Array.Empty<LibraryOptionInfoDto>();
 
-        /// <summary>
-        /// Gets or sets the type options.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "TypeOptions", Justification = "Imported from ServiceStack")]
-        public LibraryTypeOptionsDto[] TypeOptions { get; set; } = null!;
-    }
+    /// <summary>
+    /// Gets or sets the list of lyric fetchers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> LyricFetchers { get; set; } = Array.Empty<LibraryOptionInfoDto>();
+
+    /// <summary>
+    /// Gets or sets the list of MediaSegment Providers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> MediaSegmentProviders { get; set; } = Array.Empty<LibraryOptionInfoDto>();
+
+    /// <summary>
+    /// Gets or sets the type options.
+    /// </summary>
+    public IReadOnlyList<LibraryTypeOptionsDto> TypeOptions { get; set; } = Array.Empty<LibraryTypeOptionsDto>();
 }

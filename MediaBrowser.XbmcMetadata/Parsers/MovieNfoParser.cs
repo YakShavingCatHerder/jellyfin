@@ -5,6 +5,8 @@ using System.Xml;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Extensions;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
@@ -19,11 +21,20 @@ namespace MediaBrowser.XbmcMetadata.Parsers
         /// <summary>
         /// Initializes a new instance of the <see cref="MovieNfoParser"/> class.
         /// </summary>
-        /// <param name="logger">The logger.</param>
-        /// <param name="config">the configuration manager.</param>
-        /// <param name="providerManager">The provider manager.</param>
-        public MovieNfoParser(ILogger logger, IConfigurationManager config, IProviderManager providerManager)
-            : base(logger, config, providerManager)
+        /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
+        /// <param name="config">Instance of the <see cref="IConfigurationManager"/> interface.</param>
+        /// <param name="providerManager">Instance of the <see cref="IProviderManager"/> interface.</param>
+        /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
+        /// <param name="userDataManager">Instance of the <see cref="IUserDataManager"/> interface.</param>
+        /// <param name="directoryService">Instance of the <see cref="DirectoryService"/> interface.</param>
+        public MovieNfoParser(
+            ILogger logger,
+            IConfigurationManager config,
+            IProviderManager providerManager,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
+            IDirectoryService directoryService)
+            : base(logger, config, providerManager, userManager, userDataManager, directoryService)
         {
         }
 
@@ -39,23 +50,20 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             {
                 case "id":
                     {
-                        string imdbId = reader.GetAttribute("IMDB");
-                        string tmdbId = reader.GetAttribute("TMDB");
+                        // Get ids from attributes
+                        item.TrySetProviderId(MetadataProvider.Tmdb, reader.GetAttribute("TMDB"));
+                        item.TrySetProviderId(MetadataProvider.Tvdb, reader.GetAttribute("TVDB"));
+                        string? imdbId = reader.GetAttribute("IMDB");
 
-                        if (string.IsNullOrWhiteSpace(imdbId))
+                        // Read id from content
+                        // Content can be arbitrary according to Kodi wiki, so only parse if we are sure it matches a provider-specific schema
+                        var contentId = reader.ReadElementContentAsString();
+                        if (string.IsNullOrEmpty(imdbId) && contentId.StartsWith("tt", StringComparison.Ordinal))
                         {
-                            imdbId = reader.ReadElementContentAsString();
+                            imdbId = contentId;
                         }
 
-                        if (!string.IsNullOrWhiteSpace(imdbId))
-                        {
-                            item.SetProviderId(MetadataProvider.Imdb, imdbId);
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(tmdbId))
-                        {
-                            item.SetProviderId(MetadataProvider.Tmdb, tmdbId);
-                        }
+                        item.TrySetProviderId(MetadataProvider.Imdb, imdbId);
 
                         break;
                     }
@@ -65,30 +73,19 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         var movie = item as Movie;
 
                         var tmdbcolid = reader.GetAttribute("tmdbcolid");
-                        if (!string.IsNullOrWhiteSpace(tmdbcolid) && movie != null)
-                        {
-                            movie.SetProviderId(MetadataProvider.TmdbCollection, tmdbcolid);
-                        }
+                        movie?.TrySetProviderId(MetadataProvider.TmdbCollection, tmdbcolid);
 
                         var val = reader.ReadInnerXml();
 
-                        if (!string.IsNullOrWhiteSpace(val) && movie != null)
+                        if (!string.IsNullOrWhiteSpace(val) && movie is not null)
                         {
-                            // TODO Handle this better later
-                            if (val.IndexOf('<', StringComparison.Ordinal) == -1)
+                            try
                             {
-                                movie.CollectionName = val;
+                                ParseSetXml(val, movie);
                             }
-                            else
+                            catch (Exception ex)
                             {
-                                try
-                                {
-                                    ParseSetXml(val, movie);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Logger.LogError(ex, "Error parsing set node");
-                                }
+                                Logger.LogError(ex, "Error parsing set node");
                             }
                         }
 
@@ -96,31 +93,21 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     }
 
                 case "artist":
+                    var artist = reader.ReadNormalizedString();
+                    if (!string.IsNullOrEmpty(artist) && item is MusicVideo artistVideo)
                     {
-                        var val = reader.ReadElementContentAsString();
-
-                        if (!string.IsNullOrWhiteSpace(val) && item is MusicVideo movie)
-                        {
-                            var list = movie.Artists.ToList();
-                            list.Add(val);
-                            movie.Artists = list.ToArray();
-                        }
-
-                        break;
+                        artistVideo.Artists = [..artistVideo.Artists, artist];
                     }
 
+                    break;
                 case "album":
+                    var album = reader.ReadNormalizedString();
+                    if (!string.IsNullOrEmpty(album) && item is MusicVideo albumVideo)
                     {
-                        var val = reader.ReadElementContentAsString();
-
-                        if (!string.IsNullOrWhiteSpace(val) && item is MusicVideo movie)
-                        {
-                            movie.Album = val;
-                        }
-
-                        break;
+                        albumVideo.Album = album;
                     }
 
+                    break;
                 default:
                     base.FetchDataFromXmlNode(reader, itemResult);
                     break;
@@ -141,7 +128,12 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     // Loop through each element
                     while (!reader.EOF && reader.ReadState == ReadState.Interactive)
                     {
-                        if (reader.NodeType == XmlNodeType.Element)
+                        if (reader.NodeType == XmlNodeType.Text && reader.Depth == 1)
+                        {
+                            movie.CollectionName = reader.Value;
+                            break;
+                        }
+                        else if (reader.NodeType == XmlNodeType.Element)
                         {
                             switch (reader.Name)
                             {

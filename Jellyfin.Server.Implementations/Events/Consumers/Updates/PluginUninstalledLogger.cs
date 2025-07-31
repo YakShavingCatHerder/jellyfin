@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Threading.Tasks;
-using Jellyfin.Data.Entities;
+using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Events.Updates;
 using MediaBrowser.Model.Activity;
@@ -30,13 +30,13 @@ namespace Jellyfin.Server.Implementations.Events.Consumers.Updates
         }
 
         /// <inheritdoc />
-        public async Task OnEvent(PluginUninstalledEventArgs e)
+        public async Task OnEvent(PluginUninstalledEventArgs eventArgs)
         {
             await _activityManager.CreateAsync(new ActivityLog(
                     string.Format(
                         CultureInfo.InvariantCulture,
                         _localizationManager.GetLocalizedString("PluginUninstalledWithName"),
-                        e.Argument.Name),
+                        eventArgs.Argument.Name),
                     NotificationType.PluginUninstalled.ToString(),
                     Guid.Empty))
                 .ConfigureAwait(false);

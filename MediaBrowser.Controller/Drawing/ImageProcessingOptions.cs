@@ -1,3 +1,5 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
 using System;
@@ -24,8 +26,6 @@ namespace MediaBrowser.Controller.Drawing
 
         public int ImageIndex { get; set; }
 
-        public bool CropWhiteSpace { get; set; }
-
         public int? Width { get; set; }
 
         public int? Height { get; set; }
@@ -34,11 +34,13 @@ namespace MediaBrowser.Controller.Drawing
 
         public int? MaxHeight { get; set; }
 
+        public int? FillWidth { get; set; }
+
+        public int? FillHeight { get; set; }
+
         public int Quality { get; set; }
 
         public IReadOnlyCollection<ImageFormat> SupportedOutputFormats { get; set; }
-
-        public bool AddPlayedIndicator { get; set; }
 
         public int? UnplayedCount { get; set; }
 
@@ -95,6 +97,11 @@ namespace MediaBrowser.Controller.Drawing
                 return false;
             }
 
+            if (sizeValue.Width > FillWidth || sizeValue.Height > FillHeight)
+            {
+                return false;
+            }
+
             return true;
         }
 
@@ -102,11 +109,9 @@ namespace MediaBrowser.Controller.Drawing
         {
             return (Quality >= 90) &&
                 IsFormatSupported(originalImagePath) &&
-                !AddPlayedIndicator &&
                 PercentPlayed.Equals(0) &&
                 !UnplayedCount.HasValue &&
                 !Blur.HasValue &&
-                !CropWhiteSpace &&
                 string.IsNullOrEmpty(BackgroundColor) &&
                 string.IsNullOrEmpty(ForegroundLayer);
         }
@@ -114,7 +119,8 @@ namespace MediaBrowser.Controller.Drawing
         private bool IsFormatSupported(string originalImagePath)
         {
             var ext = Path.GetExtension(originalImagePath);
-            return SupportedOutputFormats.Any(outputFormat => string.Equals(ext, "." + outputFormat, StringComparison.OrdinalIgnoreCase));
+            ext = ext.Replace(".jpeg", ".jpg", StringComparison.OrdinalIgnoreCase);
+            return SupportedOutputFormats.Any(outputFormat => string.Equals(ext, outputFormat.GetExtension(), StringComparison.OrdinalIgnoreCase));
         }
     }
 }

@@ -1,7 +1,6 @@
-#pragma warning disable CS1591
-
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -10,150 +9,81 @@ using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
-using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
-using MediaBrowser.Providers.Plugins.Tmdb.Models.Collections;
-using MediaBrowser.Providers.Plugins.Tmdb.Models.General;
-using MediaBrowser.Providers.Plugins.Tmdb.Movies;
 
 namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 {
+    /// <summary>
+    /// BoxSet image provider powered by TMDb.
+    /// </summary>
     public class TmdbBoxSetImageProvider : IRemoteImageProvider, IHasOrder
     {
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly TmdbClientManager _tmdbClientManager;
 
-        public TmdbBoxSetImageProvider(IHttpClientFactory httpClientFactory)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TmdbBoxSetImageProvider"/> class.
+        /// </summary>
+        /// <param name="httpClientFactory">The <see cref="IHttpClientFactory"/>.</param>
+        /// <param name="tmdbClientManager">The <see cref="TmdbClientManager"/>.</param>
+        public TmdbBoxSetImageProvider(IHttpClientFactory httpClientFactory, TmdbClientManager tmdbClientManager)
         {
             _httpClientFactory = httpClientFactory;
+            _tmdbClientManager = tmdbClientManager;
         }
 
-        public string Name => ProviderName;
+        /// <inheritdoc />
+        public string Name => TmdbUtils.ProviderName;
 
-        public static string ProviderName => TmdbUtils.ProviderName;
+        /// <inheritdoc />
+        public int Order => 0;
 
+        /// <inheritdoc />
         public bool Supports(BaseItem item)
         {
             return item is BoxSet;
         }
 
-        public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
-        {
-            return new List<ImageType>
-            {
-                ImageType.Primary,
-                ImageType.Backdrop
-            };
-        }
+        /// <inheritdoc />
+        public IEnumerable<ImageType> GetSupportedImages(BaseItem item) =>
+        [
+            ImageType.Primary,
+            ImageType.Backdrop,
+            ImageType.Thumb
+        ];
 
+        /// <inheritdoc />
         public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
         {
-            var tmdbId = item.GetProviderId(MetadataProvider.Tmdb);
+            var tmdbId = Convert.ToInt32(item.GetProviderId(MetadataProvider.Tmdb), CultureInfo.InvariantCulture);
 
-            if (!string.IsNullOrEmpty(tmdbId))
+            if (tmdbId <= 0)
             {
-                var language = item.GetPreferredMetadataLanguage();
-
-                var mainResult = await TmdbBoxSetProvider.Current.GetMovieDbResult(tmdbId, null, cancellationToken).ConfigureAwait(false);
-
-                if (mainResult != null)
-                {
-                    var tmdbSettings = await TmdbMovieProvider.Current.GetTmdbSettings(cancellationToken).ConfigureAwait(false);
-
-                    var tmdbImageUrl = tmdbSettings.images.GetImageUrl("original");
-
-                    return GetImages(mainResult, language, tmdbImageUrl);
-                }
+                return Enumerable.Empty<RemoteImageInfo>();
             }
 
-            return new List<RemoteImageInfo>();
-        }
+            var language = item.GetPreferredMetadataLanguage();
 
-        private IEnumerable<RemoteImageInfo> GetImages(CollectionResult obj, string language, string baseUrl)
-        {
-            var list = new List<RemoteImageInfo>();
+            // TODO use image languages if All Languages isn't toggled, but there's currently no way to get that value in here
+            var collection = await _tmdbClientManager.GetCollectionAsync(tmdbId, null, null, cancellationToken).ConfigureAwait(false);
 
-            var images = obj.Images ?? new CollectionImages();
-
-            list.AddRange(GetPosters(images).Select(i => new RemoteImageInfo
+            if (collection?.Images is null)
             {
-                Url = baseUrl + i.File_Path,
-                CommunityRating = i.Vote_Average,
-                VoteCount = i.Vote_Count,
-                Width = i.Width,
-                Height = i.Height,
-                Language = TmdbMovieProvider.AdjustImageLanguage(i.Iso_639_1, language),
-                ProviderName = Name,
-                Type = ImageType.Primary,
-                RatingType = RatingType.Score
-            }));
+                return Enumerable.Empty<RemoteImageInfo>();
+            }
 
-            list.AddRange(GetBackdrops(images).Select(i => new RemoteImageInfo
-            {
-                Url = baseUrl + i.File_Path,
-                CommunityRating = i.Vote_Average,
-                VoteCount = i.Vote_Count,
-                Width = i.Width,
-                Height = i.Height,
-                ProviderName = Name,
-                Type = ImageType.Backdrop,
-                RatingType = RatingType.Score
-            }));
+            var posters = collection.Images.Posters;
+            var backdrops = collection.Images.Backdrops;
+            var remoteImages = new List<RemoteImageInfo>(posters.Count + backdrops.Count);
 
-            var isLanguageEn = string.Equals(language, "en", StringComparison.OrdinalIgnoreCase);
+            remoteImages.AddRange(_tmdbClientManager.ConvertPostersToRemoteImageInfo(posters, language));
+            remoteImages.AddRange(_tmdbClientManager.ConvertBackdropsToRemoteImageInfo(backdrops, language));
 
-            return list.OrderByDescending(i =>
-            {
-                if (string.Equals(language, i.Language, StringComparison.OrdinalIgnoreCase))
-                {
-                    return 3;
-                }
-
-                if (!isLanguageEn)
-                {
-                    if (string.Equals("en", i.Language, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return 2;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(i.Language))
-                {
-                    return isLanguageEn ? 3 : 2;
-                }
-
-                return 0;
-            })
-                .ThenByDescending(i => i.CommunityRating ?? 0)
-                .ThenByDescending(i => i.VoteCount ?? 0);
+            return remoteImages;
         }
 
-        /// <summary>
-        /// Gets the posters.
-        /// </summary>
-        /// <param name="images">The images.</param>
-        /// <returns>IEnumerable{MovieDbProvider.Poster}.</returns>
-        private IEnumerable<Poster> GetPosters(CollectionImages images)
-        {
-            return images.Posters ?? new List<Poster>();
-        }
-
-        /// <summary>
-        /// Gets the backdrops.
-        /// </summary>
-        /// <param name="images">The images.</param>
-        /// <returns>IEnumerable{MovieDbProvider.Backdrop}.</returns>
-        private IEnumerable<Backdrop> GetBackdrops(CollectionImages images)
-        {
-            var eligibleBackdrops = images.Backdrops == null ? new List<Backdrop>() :
-                images.Backdrops;
-
-            return eligibleBackdrops.OrderByDescending(i => i.Vote_Average)
-                .ThenByDescending(i => i.Vote_Count);
-        }
-
-        public int Order => 0;
-
+        /// <inheritdoc />
         public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
             return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);

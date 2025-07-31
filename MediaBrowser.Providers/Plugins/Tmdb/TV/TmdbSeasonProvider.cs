@@ -1,232 +1,173 @@
-#pragma warning disable CS1591
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Net;
+using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
+using Jellyfin.Extensions;
 using MediaBrowser.Common.Net;
-using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Globalization;
-using MediaBrowser.Model.IO;
-using MediaBrowser.Model.Net;
 using MediaBrowser.Model.Providers;
-using MediaBrowser.Model.Serialization;
-using MediaBrowser.Providers.Plugins.Tmdb.Models.TV;
-using MediaBrowser.Providers.Plugins.Tmdb.Movies;
-using Microsoft.Extensions.Logging;
-using Season = MediaBrowser.Controller.Entities.TV.Season;
 
 namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 {
+    /// <summary>
+    /// TV season provider powered by TheMovieDb.
+    /// </summary>
     public class TmdbSeasonProvider : IRemoteMetadataProvider<Season, SeasonInfo>
     {
-        private const string GetTvInfo3 = TmdbUtils.BaseTmdbApiUrl + @"3/tv/{0}/season/{1}?api_key={2}&append_to_response=images,keywords,external_ids,credits,videos";
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IServerConfigurationManager _configurationManager;
-        private readonly IJsonSerializer _jsonSerializer;
-        private readonly IFileSystem _fileSystem;
-        private readonly ILocalizationManager _localization;
-        private readonly ILogger<TmdbSeasonProvider> _logger;
+        private readonly TmdbClientManager _tmdbClientManager;
 
-        internal static TmdbSeasonProvider Current { get; private set; }
-
-        public TmdbSeasonProvider(IHttpClientFactory httpClientFactory, IServerConfigurationManager configurationManager, IFileSystem fileSystem, ILocalizationManager localization, IJsonSerializer jsonSerializer, ILogger<TmdbSeasonProvider> logger)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TmdbSeasonProvider"/> class.
+        /// </summary>
+        /// <param name="httpClientFactory">The <see cref="IHttpClientFactory"/>.</param>
+        /// <param name="tmdbClientManager">The <see cref="TmdbClientManager"/>.</param>
+        public TmdbSeasonProvider(IHttpClientFactory httpClientFactory, TmdbClientManager tmdbClientManager)
         {
             _httpClientFactory = httpClientFactory;
-            _configurationManager = configurationManager;
-            _fileSystem = fileSystem;
-            _localization = localization;
-            _jsonSerializer = jsonSerializer;
-            _logger = logger;
-            Current = this;
+            _tmdbClientManager = tmdbClientManager;
         }
 
+        /// <inheritdoc />
+        public string Name => TmdbUtils.ProviderName;
+
+        /// <inheritdoc />
         public async Task<MetadataResult<Season>> GetMetadata(SeasonInfo info, CancellationToken cancellationToken)
         {
             var result = new MetadataResult<Season>();
+            var config = Plugin.Instance.Configuration;
 
-            info.SeriesProviderIds.TryGetValue(MetadataProvider.Tmdb.ToString(), out string seriesTmdbId);
+            info.SeriesProviderIds.TryGetValue(MetadataProvider.Tmdb.ToString(), out string? seriesTmdbId);
 
             var seasonNumber = info.IndexNumber;
 
-            if (!string.IsNullOrWhiteSpace(seriesTmdbId) && seasonNumber.HasValue)
+            if (string.IsNullOrWhiteSpace(seriesTmdbId) || !seasonNumber.HasValue)
             {
-                try
+                return result;
+            }
+
+            var seasonResult = await _tmdbClientManager
+                .GetSeasonAsync(Convert.ToInt32(seriesTmdbId, CultureInfo.InvariantCulture), seasonNumber.Value, info.MetadataLanguage, TmdbUtils.GetImageLanguagesParam(info.MetadataLanguage), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (seasonResult is null)
+            {
+                return result;
+            }
+
+            result.HasMetadata = true;
+            result.Item = new Season
+            {
+                IndexNumber = seasonNumber,
+                Overview = seasonResult.Overview,
+                PremiereDate = seasonResult.AirDate,
+                ProductionYear = seasonResult.AirDate?.Year
+            };
+
+            if (config.ImportSeasonName)
+            {
+                result.Item.Name = seasonResult.Name;
+            }
+
+            result.Item.TrySetProviderId(MetadataProvider.Tvdb, seasonResult.ExternalIds.TvdbId);
+
+            // TODO why was this disabled?
+            var credits = seasonResult.Credits;
+
+            if (credits?.Cast is not null)
+            {
+                var castQuery = config.HideMissingCastMembers
+                    ? credits.Cast.Where(a => !string.IsNullOrEmpty(a.ProfilePath)).OrderBy(a => a.Order)
+                    : credits.Cast.OrderBy(a => a.Order);
+
+                foreach (var actor in castQuery.Take(config.MaxCastMembers))
                 {
-                    var seasonInfo = await GetSeasonInfo(seriesTmdbId, seasonNumber.Value, info.MetadataLanguage, cancellationToken)
-                      .ConfigureAwait(false);
-
-                    result.HasMetadata = true;
-                    result.Item = new Season();
-
-                    // Don't use moviedb season names for now until if/when we have field-level configuration
-                    // result.Item.Name = seasonInfo.name;
-
-                    result.Item.Name = info.Name;
-
-                    result.Item.IndexNumber = seasonNumber;
-
-                    result.Item.Overview = seasonInfo.Overview;
-
-                    if (seasonInfo.External_Ids != null && seasonInfo.External_Ids.Tvdb_Id > 0)
+                    if (string.IsNullOrWhiteSpace(actor.Name))
                     {
-                        result.Item.SetProviderId(MetadataProvider.Tvdb, seasonInfo.External_Ids.Tvdb_Id.Value.ToString(CultureInfo.InvariantCulture));
+                        continue;
                     }
 
-                    var credits = seasonInfo.Credits;
-                    if (credits != null)
+                    var personInfo = new PersonInfo
                     {
-                        // Actors, Directors, Writers - all in People
-                        // actors come from cast
-                        if (credits.Cast != null)
-                        {
-                            // foreach (var actor in credits.cast.OrderBy(a => a.order)) result.Item.AddPerson(new PersonInfo { Name = actor.name.Trim(), Role = actor.character, Type = PersonType.Actor, SortOrder = actor.order });
-                        }
+                        Name = actor.Name.Trim(),
+                        Role = actor.Character?.Trim() ?? string.Empty,
+                        Type = PersonKind.Actor,
+                        SortOrder = actor.Order,
+                        ImageUrl = _tmdbClientManager.GetProfileUrl(actor.ProfilePath)
+                    };
 
-                        // and the rest from crew
-                        if (credits.Crew != null)
-                        {
-                            // foreach (var person in credits.crew) result.Item.AddPerson(new PersonInfo { Name = person.name.Trim(), Role = person.job, Type = person.department });
-                        }
+                    if (actor.Id > 0)
+                    {
+                        personInfo.SetProviderId(MetadataProvider.Tmdb, actor.Id.ToString(CultureInfo.InvariantCulture));
                     }
 
-                    result.Item.PremiereDate = seasonInfo.Air_Date;
-                    result.Item.ProductionYear = result.Item.PremiereDate.Value.Year;
+                    result.AddPerson(personInfo);
                 }
-                catch (HttpException ex)
-                {
-                    _logger.LogError(ex, "No metadata found for {0}", seasonNumber.Value);
+            }
 
-                    if (ex.StatusCode.HasValue && ex.StatusCode.Value == HttpStatusCode.NotFound)
+            if (credits?.Crew is not null)
+            {
+                var crewQuery = credits.Crew
+                    .Select(crewMember => new
                     {
-                        return result;
+                        CrewMember = crewMember,
+                        PersonType = TmdbUtils.MapCrewToPersonType(crewMember)
+                    })
+                    .Where(entry =>
+                        TmdbUtils.WantedCrewKinds.Contains(entry.PersonType) ||
+                        TmdbUtils.WantedCrewTypes.Contains(entry.CrewMember.Job ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+
+                if (config.HideMissingCrewMembers)
+                {
+                    crewQuery = crewQuery.Where(entry => !string.IsNullOrEmpty(entry.CrewMember.ProfilePath));
+                }
+
+                foreach (var entry in crewQuery.Take(config.MaxCrewMembers))
+                {
+                    var crewMember = entry.CrewMember;
+
+                    if (string.IsNullOrWhiteSpace(crewMember.Name))
+                    {
+                        continue;
                     }
 
-                    throw;
+                    var personInfo = new PersonInfo
+                    {
+                        Name = crewMember.Name.Trim(),
+                        Role = crewMember.Job?.Trim() ?? string.Empty,
+                        Type = entry.PersonType,
+                        ImageUrl = _tmdbClientManager.GetProfileUrl(crewMember.ProfilePath)
+                    };
+
+                    if (crewMember.Id > 0)
+                    {
+                        personInfo.SetProviderId(MetadataProvider.Tmdb, crewMember.Id.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    result.AddPerson(personInfo);
                 }
             }
 
             return result;
         }
 
-        public string Name => TmdbUtils.ProviderName;
-
+        /// <inheritdoc />
         public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(SeasonInfo searchInfo, CancellationToken cancellationToken)
         {
-            return Task.FromResult<IEnumerable<RemoteSearchResult>>(new List<RemoteSearchResult>());
+            return Task.FromResult(Enumerable.Empty<RemoteSearchResult>());
         }
 
+        /// <inheritdoc />
         public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
             return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
-        }
-
-        private async Task<SeasonResult> GetSeasonInfo(string seriesTmdbId, int season, string preferredMetadataLanguage,
-            CancellationToken cancellationToken)
-        {
-            await EnsureSeasonInfo(seriesTmdbId, season, preferredMetadataLanguage, cancellationToken)
-                    .ConfigureAwait(false);
-
-            var dataFilePath = GetDataFilePath(seriesTmdbId, season, preferredMetadataLanguage);
-
-            return _jsonSerializer.DeserializeFromFile<SeasonResult>(dataFilePath);
-        }
-
-        internal Task EnsureSeasonInfo(string tmdbId, int seasonNumber, string language, CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrEmpty(tmdbId))
-            {
-                throw new ArgumentNullException(nameof(tmdbId));
-            }
-
-            if (string.IsNullOrEmpty(language))
-            {
-                throw new ArgumentNullException(nameof(language));
-            }
-
-            var path = GetDataFilePath(tmdbId, seasonNumber, language);
-
-            var fileInfo = _fileSystem.GetFileSystemInfo(path);
-
-            if (fileInfo.Exists)
-            {
-                // If it's recent or automatic updates are enabled, don't re-download
-                if ((DateTime.UtcNow - _fileSystem.GetLastWriteTimeUtc(fileInfo)).TotalDays <= 2)
-                {
-                    return Task.CompletedTask;
-                }
-            }
-
-            return DownloadSeasonInfo(tmdbId, seasonNumber, language, cancellationToken);
-        }
-
-        internal string GetDataFilePath(string tmdbId, int seasonNumber, string preferredLanguage)
-        {
-            if (string.IsNullOrEmpty(tmdbId))
-            {
-                throw new ArgumentNullException(nameof(tmdbId));
-            }
-
-            if (string.IsNullOrEmpty(preferredLanguage))
-            {
-                throw new ArgumentNullException(nameof(preferredLanguage));
-            }
-
-            var path = TmdbSeriesProvider.GetSeriesDataPath(_configurationManager.ApplicationPaths, tmdbId);
-
-            var filename = string.Format(CultureInfo.InvariantCulture, "season-{0}-{1}.json",
-                seasonNumber.ToString(CultureInfo.InvariantCulture),
-                preferredLanguage);
-
-            return Path.Combine(path, filename);
-        }
-
-        internal async Task DownloadSeasonInfo(string id, int seasonNumber, string preferredMetadataLanguage, CancellationToken cancellationToken)
-        {
-            var mainResult = await FetchMainResult(id, seasonNumber, preferredMetadataLanguage, cancellationToken).ConfigureAwait(false);
-
-            var dataFilePath = GetDataFilePath(id, seasonNumber, preferredMetadataLanguage);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(dataFilePath));
-            _jsonSerializer.SerializeToFile(mainResult, dataFilePath);
-        }
-
-        internal async Task<SeasonResult> FetchMainResult(string id, int seasonNumber, string language, CancellationToken cancellationToken)
-        {
-            var url = string.Format(
-                CultureInfo.InvariantCulture,
-                GetTvInfo3,
-                id,
-                seasonNumber.ToString(CultureInfo.InvariantCulture),
-                TmdbUtils.ApiKey);
-
-            if (!string.IsNullOrEmpty(language))
-            {
-                url += string.Format(CultureInfo.InvariantCulture, "&language={0}", TmdbMovieProvider.NormalizeLanguage(language));
-            }
-
-            var includeImageLanguageParam = TmdbMovieProvider.GetImageLanguagesParam(language);
-            // Get images in english and with no language
-            url += "&include_image_language=" + includeImageLanguageParam;
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-            foreach (var header in TmdbUtils.AcceptHeaders)
-            {
-                requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
-            }
-
-            using var response = await TmdbMovieProvider.Current.GetMovieDbResponse(requestMessage, cancellationToken).ConfigureAwait(false);
-            await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            return await _jsonSerializer.DeserializeFromStreamAsync<SeasonResult>(stream).ConfigureAwait(false);
         }
     }
 }

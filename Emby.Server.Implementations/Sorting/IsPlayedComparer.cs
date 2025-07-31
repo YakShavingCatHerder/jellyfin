@@ -1,6 +1,9 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
-using Jellyfin.Data.Entities;
+using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Sorting;
@@ -20,13 +23,13 @@ namespace Emby.Server.Implementations.Sorting
         /// Gets the name.
         /// </summary>
         /// <value>The name.</value>
-        public string Name => ItemSortBy.IsUnplayed;
+        public ItemSortBy Type => ItemSortBy.IsUnplayed;
 
         /// <summary>
-        /// Gets or sets the user data repository.
+        /// Gets or sets the user data manager.
         /// </summary>
-        /// <value>The user data repository.</value>
-        public IUserDataManager UserDataRepository { get; set; }
+        /// <value>The user data manager.</value>
+        public IUserDataManager UserDataManager { get; set; }
 
         /// <summary>
         /// Gets or sets the user manager.

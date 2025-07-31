@@ -1,11 +1,7 @@
-using System;
 using System.Collections.Generic;
 using CommandLine;
 using Emby.Server.Implementations;
-using Emby.Server.Implementations.EntryPoints;
-using Emby.Server.Implementations.Udp;
-using Emby.Server.Implementations.Updates;
-using MediaBrowser.Controller.Extensions;
+using static MediaBrowser.Controller.Extensions.ConfigurationExtensions;
 
 namespace Jellyfin.Server
 {
@@ -64,46 +60,51 @@ namespace Jellyfin.Server
         public bool IsService { get; set; }
 
         /// <inheritdoc />
-        [Option("noautorunwebapp", Required = false, HelpText = "Run headless if startup wizard is complete.")]
-        public bool NoAutoRunWebApp { get; set; }
-
-        /// <inheritdoc />
         [Option("package-name", Required = false, HelpText = "Used when packaging Jellyfin (example, synology).")]
         public string? PackageName { get; set; }
 
         /// <inheritdoc />
-        [Option("restartpath", Required = false, HelpText = "Path to restart script.")]
-        public string? RestartPath { get; set; }
-
-        /// <inheritdoc />
-        [Option("restartargs", Required = false, HelpText = "Arguments for restart script.")]
-        public string? RestartArgs { get; set; }
-
-        /// <inheritdoc />
         [Option("published-server-url", Required = false, HelpText = "Jellyfin Server URL to publish via auto discover process")]
-        public Uri? PublishedServerUrl { get; set; }
+        public string? PublishedServerUrl { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the server should not detect network status change.
+        /// </summary>
+        [Option("nonetchange", Required = false, HelpText = "Indicates that the server should not detect network status change.")]
+        public bool NoDetectNetworkChange { get; set; }
+
+        /// <summary>
+        /// Gets or sets the path to an jellyfin backup archive to restore the application to.
+        /// </summary>
+        [Option("restore-archive", Required = false, HelpText = "Path to a Jellyfin backup archive to restore from")]
+        public string? RestoreArchive { get; set; }
 
         /// <summary>
         /// Gets the command line options as a dictionary that can be used in the .NET configuration system.
         /// </summary>
         /// <returns>The configuration dictionary.</returns>
-        public Dictionary<string, string> ConvertToConfig()
+        public Dictionary<string, string?> ConvertToConfig()
         {
-            var config = new Dictionary<string, string>();
+            var config = new Dictionary<string, string?>();
 
             if (NoWebClient)
             {
-                config.Add(ConfigurationExtensions.HostWebClientKey, bool.FalseString);
+                config.Add(HostWebClientKey, bool.FalseString);
             }
 
-            if (PublishedServerUrl != null)
+            if (PublishedServerUrl is not null)
             {
-                config.Add(UdpServer.AddressOverrideConfigKey, PublishedServerUrl.ToString());
+                config.Add(AddressOverrideKey, PublishedServerUrl);
             }
 
-            if (FFmpegPath != null)
+            if (FFmpegPath is not null)
             {
-                config.Add(ConfigurationExtensions.FfmpegPathKey, FFmpegPath);
+                config.Add(FfmpegPathKey, FFmpegPath);
+            }
+
+            if (NoDetectNetworkChange)
+            {
+                config.Add(DetectNetworkChangeKey, bool.FalseString);
             }
 
             return config;

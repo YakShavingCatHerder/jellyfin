@@ -1,8 +1,9 @@
 using System;
 using System.IO;
+using Emby.Naming.Audio;
+using Emby.Naming.Common;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Resolvers;
 using MediaBrowser.Model.IO;
 
@@ -13,22 +14,22 @@ namespace Emby.Server.Implementations.Library
     /// </summary>
     public class CoreResolutionIgnoreRule : IResolverIgnoreRule
     {
-        private readonly ILibraryManager _libraryManager;
+        private readonly NamingOptions _namingOptions;
         private readonly IServerApplicationPaths _serverApplicationPaths;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CoreResolutionIgnoreRule"/> class.
         /// </summary>
-        /// <param name="libraryManager">The library manager.</param>
+        /// <param name="namingOptions">The naming options.</param>
         /// <param name="serverApplicationPaths">The server application paths.</param>
-        public CoreResolutionIgnoreRule(ILibraryManager libraryManager, IServerApplicationPaths serverApplicationPaths)
+        public CoreResolutionIgnoreRule(NamingOptions namingOptions, IServerApplicationPaths serverApplicationPaths)
         {
-            _libraryManager = libraryManager;
+            _namingOptions = namingOptions;
             _serverApplicationPaths = serverApplicationPaths;
         }
 
         /// <inheritdoc />
-        public bool ShouldIgnore(FileSystemMetadata fileInfo, BaseItem parent)
+        public bool ShouldIgnore(FileSystemMetadata fileInfo, BaseItem? parent)
         {
             // Don't ignore application folders
             if (fileInfo.FullName.Contains(_serverApplicationPaths.RootFolderPath, StringComparison.InvariantCulture))
@@ -51,22 +52,12 @@ namespace Emby.Server.Implementations.Library
 
             if (fileInfo.IsDirectory)
             {
-                if (parent != null)
+                if (parent is not null)
                 {
-                    // Ignore trailer folders but allow it at the collection level
-                    if (string.Equals(filename, BaseItem.TrailerFolderName, StringComparison.OrdinalIgnoreCase)
-                        && !(parent is AggregateFolder)
-                        && !(parent is UserRootFolder))
-                    {
-                        return true;
-                    }
-
-                    if (string.Equals(filename, BaseItem.ThemeVideosFolderName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-
-                    if (string.Equals(filename, BaseItem.ThemeSongsFolderName, StringComparison.OrdinalIgnoreCase))
+                    // Ignore extras for unsupported types
+                    if (_namingOptions.AllExtrasTypesFolderNames.ContainsKey(filename)
+                        && parent is not AggregateFolder
+                        && parent is not UserRootFolder)
                     {
                         return true;
                     }
@@ -74,11 +65,11 @@ namespace Emby.Server.Implementations.Library
             }
             else
             {
-                if (parent != null)
+                if (parent is not null)
                 {
-                    // Don't resolve these into audio files
-                    if (string.Equals(Path.GetFileNameWithoutExtension(filename), BaseItem.ThemeSongFilename, StringComparison.Ordinal)
-                        && _libraryManager.IsAudioFile(filename))
+                    // Don't resolve theme songs
+                    if (Path.GetFileNameWithoutExtension(filename.AsSpan()).Equals(BaseItem.ThemeSongFileName, StringComparison.Ordinal)
+                        && AudioFileParser.IsAudioFile(filename, _namingOptions))
                     {
                         return true;
                     }

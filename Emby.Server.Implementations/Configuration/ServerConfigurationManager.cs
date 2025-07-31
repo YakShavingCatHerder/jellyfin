@@ -7,7 +7,6 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Model.Configuration;
-using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
 
@@ -22,11 +21,13 @@ namespace Emby.Server.Implementations.Configuration
         /// Initializes a new instance of the <see cref="ServerConfigurationManager" /> class.
         /// </summary>
         /// <param name="applicationPaths">The application paths.</param>
-        /// <param name="loggerFactory">The paramref name="loggerFactory" factory.</param>
+        /// <param name="loggerFactory">The logger factory.</param>
         /// <param name="xmlSerializer">The XML serializer.</param>
-        /// <param name="fileSystem">The file system.</param>
-        public ServerConfigurationManager(IApplicationPaths applicationPaths, ILoggerFactory loggerFactory, IXmlSerializer xmlSerializer, IFileSystem fileSystem)
-            : base(applicationPaths, loggerFactory, xmlSerializer, fileSystem)
+        public ServerConfigurationManager(
+            IApplicationPaths applicationPaths,
+            ILoggerFactory loggerFactory,
+            IXmlSerializer xmlSerializer)
+            : base(applicationPaths, loggerFactory, xmlSerializer)
         {
             UpdateMetadataPath();
         }
@@ -34,7 +35,7 @@ namespace Emby.Server.Implementations.Configuration
         /// <summary>
         /// Configuration updating event.
         /// </summary>
-        public event EventHandler<GenericEventArgs<ServerConfiguration>> ConfigurationUpdating;
+        public event EventHandler<GenericEventArgs<ServerConfiguration>>? ConfigurationUpdating;
 
         /// <summary>
         /// Gets the type of the configuration.
@@ -88,36 +89,10 @@ namespace Emby.Server.Implementations.Configuration
             var newConfig = (ServerConfiguration)newConfiguration;
 
             ValidateMetadataPath(newConfig);
-            ValidateSslCertificate(newConfig);
 
             ConfigurationUpdating?.Invoke(this, new GenericEventArgs<ServerConfiguration>(newConfig));
 
             base.ReplaceConfiguration(newConfiguration);
-        }
-
-        /// <summary>
-        /// Validates the SSL certificate.
-        /// </summary>
-        /// <param name="newConfig">The new configuration.</param>
-        /// <exception cref="FileNotFoundException">The certificate path doesn't exist.</exception>
-        private void ValidateSslCertificate(BaseApplicationConfiguration newConfig)
-        {
-            var serverConfig = (ServerConfiguration)newConfig;
-
-            var newPath = serverConfig.CertificatePath;
-
-            if (!string.IsNullOrWhiteSpace(newPath)
-                && !string.Equals(Configuration.CertificatePath, newPath, StringComparison.Ordinal))
-            {
-                if (!File.Exists(newPath))
-                {
-                    throw new FileNotFoundException(
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "Certificate file '{0}' does not exist.",
-                            newPath));
-                }
-            }
         }
 
         /// <summary>

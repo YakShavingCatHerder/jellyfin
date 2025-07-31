@@ -1,5 +1,6 @@
 using System.Collections.Generic;
-using Jellyfin.Server.Middleware;
+using Jellyfin.Api.Middleware;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.OpenApi.Models;
@@ -24,8 +25,8 @@ namespace Jellyfin.Server.Extensions
             // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.),
             // specifying the Swagger JSON endpoint.
 
-            var baseUrl = serverConfigurationManager.Configuration.BaseUrl.Trim('/');
-            var apiDocBaseUrl = serverConfigurationManager.Configuration.BaseUrl;
+            var baseUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl.Trim('/');
+            var apiDocBaseUrl = serverConfigurationManager.GetNetworkConfiguration().BaseUrl;
             if (!string.IsNullOrEmpty(baseUrl))
             {
                 baseUrl += '/';
@@ -62,19 +63,19 @@ namespace Jellyfin.Server.Extensions
         /// </summary>
         /// <param name="appBuilder">The application builder.</param>
         /// <returns>The updated application builder.</returns>
-        public static IApplicationBuilder UseIpBasedAccessValidation(this IApplicationBuilder appBuilder)
+        public static IApplicationBuilder UseIPBasedAccessValidation(this IApplicationBuilder appBuilder)
         {
-            return appBuilder.UseMiddleware<IpBasedAccessValidationMiddleware>();
+            return appBuilder.UseMiddleware<IPBasedAccessValidationMiddleware>();
         }
 
         /// <summary>
-        /// Adds LAN based access filtering to the application pipeline.
+        /// Enables url decoding before binding to the application pipeline.
         /// </summary>
-        /// <param name="appBuilder">The application builder.</param>
+        /// <param name="appBuilder">The <see cref="IApplicationBuilder"/>.</param>
         /// <returns>The updated application builder.</returns>
-        public static IApplicationBuilder UseLanFiltering(this IApplicationBuilder appBuilder)
+        public static IApplicationBuilder UseQueryStringDecoding(this IApplicationBuilder appBuilder)
         {
-            return appBuilder.UseMiddleware<LanFilteringMiddleware>();
+            return appBuilder.UseMiddleware<QueryStringDecodingMiddleware>();
         }
 
         /// <summary>
@@ -105,6 +106,29 @@ namespace Jellyfin.Server.Extensions
         public static IApplicationBuilder UseWebSocketHandler(this IApplicationBuilder appBuilder)
         {
             return appBuilder.UseMiddleware<WebSocketHandlerMiddleware>();
+        }
+
+        /// <summary>
+        /// Adds robots.txt redirection to the application pipeline.
+        /// </summary>
+        /// <param name="appBuilder">The application builder.</param>
+        /// <returns>The updated application builder.</returns>
+        public static IApplicationBuilder UseRobotsRedirection(this IApplicationBuilder appBuilder)
+        {
+            return appBuilder.UseMiddleware<RobotsRedirectionMiddleware>();
+        }
+
+        /// <summary>
+        /// Adds /emby and /mediabrowser route trimming to the application pipeline.
+        /// </summary>
+        /// <remarks>
+        /// This must be injected before any path related middleware.
+        /// </remarks>
+        /// <param name="appBuilder">The application builder.</param>
+        /// <returns>The updated application builder.</returns>
+        public static IApplicationBuilder UsePathTrim(this IApplicationBuilder appBuilder)
+        {
+            return appBuilder.UseMiddleware<LegacyEmbyRouteRewriteMiddleware>();
         }
     }
 }

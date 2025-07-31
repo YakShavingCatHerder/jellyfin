@@ -1,9 +1,12 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Dto;
@@ -26,49 +29,49 @@ namespace Emby.Server.Implementations.Images
             var view = (CollectionFolder)item;
             var viewType = view.CollectionType;
 
-            string[] includeItemTypes;
+            BaseItemKind[] includeItemTypes;
 
-            if (string.Equals(viewType, CollectionType.Movies))
+            switch (viewType)
             {
-                includeItemTypes = new string[] { "Movie" };
-            }
-            else if (string.Equals(viewType, CollectionType.TvShows))
-            {
-                includeItemTypes = new string[] { "Series" };
-            }
-            else if (string.Equals(viewType, CollectionType.Music))
-            {
-                includeItemTypes = new string[] { "MusicAlbum" };
-            }
-            else if (string.Equals(viewType, CollectionType.Books))
-            {
-                includeItemTypes = new string[] { "Book", "AudioBook" };
-            }
-            else if (string.Equals(viewType, CollectionType.BoxSets))
-            {
-                includeItemTypes = new string[] { "BoxSet" };
-            }
-            else if (string.Equals(viewType, CollectionType.HomeVideos) || string.Equals(viewType, CollectionType.Photos))
-            {
-                includeItemTypes = new string[] { "Video", "Photo" };
-            }
-            else
-            {
-                includeItemTypes = new string[] { "Video", "Audio", "Photo", "Movie", "Series" };
+                case CollectionType.movies:
+                    includeItemTypes = new[] { BaseItemKind.Movie };
+                    break;
+                case CollectionType.tvshows:
+                    includeItemTypes = new[] { BaseItemKind.Series };
+                    break;
+                case CollectionType.music:
+                    includeItemTypes = new[] { BaseItemKind.MusicAlbum };
+                    break;
+                case CollectionType.musicvideos:
+                    includeItemTypes = new[] { BaseItemKind.MusicVideo };
+                    break;
+                case CollectionType.books:
+                    includeItemTypes = new[] { BaseItemKind.Book, BaseItemKind.AudioBook };
+                    break;
+                case CollectionType.boxsets:
+                    includeItemTypes = new[] { BaseItemKind.BoxSet };
+                    break;
+                case CollectionType.homevideos:
+                case CollectionType.photos:
+                    includeItemTypes = new[] { BaseItemKind.Video, BaseItemKind.Photo };
+                    break;
+                default:
+                    includeItemTypes = new[] { BaseItemKind.Video, BaseItemKind.Audio, BaseItemKind.Photo, BaseItemKind.Movie, BaseItemKind.Series };
+                    break;
             }
 
-            var recursive = !string.Equals(CollectionType.Playlists, viewType, StringComparison.OrdinalIgnoreCase);
+            var recursive = viewType != CollectionType.playlists;
 
             return view.GetItemList(new InternalItemsQuery
             {
                 CollapseBoxSetItems = false,
                 Recursive = recursive,
                 DtoOptions = new DtoOptions(false),
-                ImageTypes = new ImageType[] { ImageType.Primary },
+                ImageTypes = new[] { ImageType.Primary },
                 Limit = 8,
-                OrderBy = new ValueTuple<string, SortOrder>[]
+                OrderBy = new[]
                 {
-                    new ValueTuple<string, SortOrder>(ItemSortBy.Random, SortOrder.Ascending)
+                    (ItemSortBy.Random, SortOrder.Ascending)
                 },
                 IncludeItemTypes = includeItemTypes
             });

@@ -1,23 +1,36 @@
-#nullable enable
-#pragma warning disable CS1591
-
 using System;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using Emby.Naming.Common;
+using Jellyfin.Extensions;
 
 namespace Emby.Naming.Audio
 {
-    public class AlbumParser
+    /// <summary>
+    /// Helper class to determine if Album is multipart.
+    /// </summary>
+    public partial class AlbumParser
     {
         private readonly NamingOptions _options;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AlbumParser"/> class.
+        /// </summary>
+        /// <param name="options">Naming options containing AlbumStackingPrefixes.</param>
         public AlbumParser(NamingOptions options)
         {
             _options = options;
         }
 
+        [GeneratedRegex(@"[-\.\(\)\s]+")]
+        private static partial Regex CleanRegex();
+
+        /// <summary>
+        /// Function that determines if album is multipart.
+        /// </summary>
+        /// <param name="path">Path to file.</param>
+        /// <returns>True if album is multipart.</returns>
         public bool IsMultiPart(string path)
         {
             var filename = Path.GetFileName(path);
@@ -32,13 +45,9 @@ namespace Emby.Naming.Audio
 
             // Normalize
             // Remove whitespace
-            filename = filename.Replace('-', ' ');
-            filename = filename.Replace('.', ' ');
-            filename = filename.Replace('(', ' ');
-            filename = filename.Replace(')', ' ');
-            filename = Regex.Replace(filename, @"\s+", " ");
+            filename = CleanRegex().Replace(filename, " ");
 
-            ReadOnlySpan<char> trimmedFilename = filename.TrimStart();
+            ReadOnlySpan<char> trimmedFilename = filename.AsSpan().TrimStart();
 
             foreach (var prefix in _options.AlbumStackingPrefixes)
             {
@@ -49,13 +58,7 @@ namespace Emby.Naming.Audio
 
                 var tmp = trimmedFilename.Slice(prefix.Length).Trim();
 
-                int index = tmp.IndexOf(' ');
-                if (index != -1)
-                {
-                    tmp = tmp.Slice(0, index);
-                }
-
-                if (int.TryParse(tmp, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                if (int.TryParse(tmp.LeftPart(' '), CultureInfo.InvariantCulture, out _))
                 {
                     return true;
                 }

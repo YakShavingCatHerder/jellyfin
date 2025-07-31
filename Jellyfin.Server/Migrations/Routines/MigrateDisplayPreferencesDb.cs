@@ -1,31 +1,37 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Jellyfin.Data.Entities;
-using Jellyfin.Data.Enums;
-using Jellyfin.Server.Implementations;
+using Emby.Server.Implementations.Data;
+using Jellyfin.Database.Implementations;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller;
-using MediaBrowser.Model.Entities;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SQLitePCL.pretty;
 
 namespace Jellyfin.Server.Migrations.Routines
 {
     /// <summary>
     /// The migration routine for migrating the display preferences database to EF Core.
     /// </summary>
+#pragma warning disable CS0618 // Type or member is obsolete
+    [JellyfinMigration("2025-04-20T12:00:00", nameof(MigrateDisplayPreferencesDb), "06387815-C3CC-421F-A888-FB5F9992BEA8")]
     public class MigrateDisplayPreferencesDb : IMigrationRoutine
+#pragma warning restore CS0618 // Type or member is obsolete
     {
         private const string DbFilename = "displaypreferences.db";
 
         private readonly ILogger<MigrateDisplayPreferencesDb> _logger;
         private readonly IServerApplicationPaths _paths;
-        private readonly JellyfinDbProvider _provider;
+        private readonly IDbContextFactory<JellyfinDbContext> _provider;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly IUserManager _userManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MigrateDisplayPreferencesDb"/> class.
@@ -33,23 +39,20 @@ namespace Jellyfin.Server.Migrations.Routines
         /// <param name="logger">The logger.</param>
         /// <param name="paths">The server application paths.</param>
         /// <param name="provider">The database provider.</param>
-        public MigrateDisplayPreferencesDb(ILogger<MigrateDisplayPreferencesDb> logger, IServerApplicationPaths paths, JellyfinDbProvider provider)
+        /// <param name="userManager">The user manager.</param>
+        public MigrateDisplayPreferencesDb(
+            ILogger<MigrateDisplayPreferencesDb> logger,
+            IServerApplicationPaths paths,
+            IDbContextFactory<JellyfinDbContext> provider,
+            IUserManager userManager)
         {
             _logger = logger;
             _paths = paths;
             _provider = provider;
+            _userManager = userManager;
             _jsonOptions = new JsonSerializerOptions();
             _jsonOptions.Converters.Add(new JsonStringEnumConverter());
         }
-
-        /// <inheritdoc />
-        public Guid Id => Guid.Parse("06387815-C3CC-421F-A888-FB5F9992BEA8");
-
-        /// <inheritdoc />
-        public string Name => "MigrateDisplayPreferencesDatabase";
-
-        /// <inheritdoc />
-        public bool PerformOnNewInstall => false;
 
         /// <inheritdoc />
         public void Perform()
@@ -72,53 +75,83 @@ namespace Jellyfin.Server.Migrations.Routines
                 { "unstable", ChromecastVersion.Unstable }
             };
 
+            var displayPrefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var customDisplayPrefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var dbFilePath = Path.Combine(_paths.DataPath, DbFilename);
-            using (var connection = SQLite3.Open(dbFilePath, ConnectionFlags.ReadOnly, null))
+            using (var connection = new SqliteConnection($"Filename={dbFilePath}"))
             {
-                using var dbContext = _provider.CreateContext();
+                connection.Open();
+                using var dbContext = _provider.CreateDbContext();
 
                 var results = connection.Query("SELECT * FROM userdisplaypreferences");
                 foreach (var result in results)
                 {
-                    var dto = JsonSerializer.Deserialize<DisplayPreferencesDto>(result[3].ToString(), _jsonOptions);
-                    if (dto == null)
+                    var dto = JsonSerializer.Deserialize<DisplayPreferencesDto>(result.GetStream(3), _jsonOptions);
+                    if (dto is null)
                     {
                         continue;
                     }
 
+                    var itemId = result.GetGuid(1);
+                    var dtoUserId = itemId;
+                    var client = result.GetString(2);
+                    var displayPreferencesKey = $"{dtoUserId}|{itemId}|{client}";
+                    if (displayPrefs.Contains(displayPreferencesKey))
+                    {
+                        // Duplicate display preference.
+                        continue;
+                    }
+
+                    displayPrefs.Add(displayPreferencesKey);
+                    var existingUser = _userManager.GetUserById(dtoUserId);
+                    if (existingUser is null)
+                    {
+                        _logger.LogWarning("User with ID {UserId} does not exist in the database, skipping migration.", dtoUserId);
+                        continue;
+                    }
+
                     var chromecastVersion = dto.CustomPrefs.TryGetValue("chromecastVersion", out var version)
+                                            && !string.IsNullOrEmpty(version)
                         ? chromecastDict[version]
                         : ChromecastVersion.Stable;
+                    dto.CustomPrefs.Remove("chromecastVersion");
 
-                    var displayPreferences = new DisplayPreferences(new Guid(result[1].ToBlob()), result[2].ToString())
+                    var displayPreferences = new DisplayPreferences(dtoUserId, itemId, client)
                     {
-                        IndexBy = Enum.TryParse<IndexingKind>(dto.IndexBy, true, out var indexBy) ? indexBy : (IndexingKind?)null,
+                        IndexBy = Enum.TryParse<IndexingKind>(dto.IndexBy, true, out var indexBy) ? indexBy : null,
                         ShowBackdrop = dto.ShowBackdrop,
                         ShowSidebar = dto.ShowSidebar,
                         ScrollDirection = dto.ScrollDirection,
                         ChromecastVersion = chromecastVersion,
-                        SkipForwardLength = dto.CustomPrefs.TryGetValue("skipForwardLength", out var length)
-                            ? int.Parse(length, CultureInfo.InvariantCulture)
+                        SkipForwardLength = dto.CustomPrefs.TryGetValue("skipForwardLength", out var length) && int.TryParse(length, out var skipForwardLength)
+                            ? skipForwardLength
                             : 30000,
-                        SkipBackwardLength = dto.CustomPrefs.TryGetValue("skipBackLength", out length)
-                            ? int.Parse(length, CultureInfo.InvariantCulture)
+                        SkipBackwardLength = dto.CustomPrefs.TryGetValue("skipBackLength", out length) && int.TryParse(length, out var skipBackwardLength)
+                            ? skipBackwardLength
                             : 10000,
-                        EnableNextVideoInfoOverlay = dto.CustomPrefs.TryGetValue("enableNextVideoInfoOverlay", out var enabled)
-                            ? bool.Parse(enabled)
-                            : true,
+                        EnableNextVideoInfoOverlay = !dto.CustomPrefs.TryGetValue("enableNextVideoInfoOverlay", out var enabled) || string.IsNullOrEmpty(enabled) || bool.Parse(enabled),
                         DashboardTheme = dto.CustomPrefs.TryGetValue("dashboardtheme", out var theme) ? theme : string.Empty,
                         TvHome = dto.CustomPrefs.TryGetValue("tvhome", out var home) ? home : string.Empty
                     };
 
+                    dto.CustomPrefs.Remove("skipForwardLength");
+                    dto.CustomPrefs.Remove("skipBackLength");
+                    dto.CustomPrefs.Remove("enableNextVideoInfoOverlay");
+                    dto.CustomPrefs.Remove("dashboardtheme");
+                    dto.CustomPrefs.Remove("tvhome");
+
                     for (int i = 0; i < 7; i++)
                     {
-                        dto.CustomPrefs.TryGetValue("homesection" + i, out var homeSection);
+                        var key = "homesection" + i;
+                        dto.CustomPrefs.TryGetValue(key, out var homeSection);
 
                         displayPreferences.HomeSections.Add(new HomeSection
                         {
                             Order = i,
                             Type = Enum.TryParse<HomeSectionType>(homeSection, true, out var type) ? type : defaults[i]
                         });
+
+                        dto.CustomPrefs.Remove(key);
                     }
 
                     var defaultLibraryPrefs = new ItemDisplayPreferences(displayPreferences.UserId, Guid.Empty, displayPreferences.Client)
@@ -133,12 +166,12 @@ namespace Jellyfin.Server.Migrations.Routines
 
                     foreach (var key in dto.CustomPrefs.Keys.Where(key => key.StartsWith("landing-", StringComparison.Ordinal)))
                     {
-                        if (!Guid.TryParse(key.AsSpan().Slice("landing-".Length), out var itemId))
+                        if (!Guid.TryParse(key.AsSpan().Slice("landing-".Length), out var landingItemId))
                         {
                             continue;
                         }
 
-                        var libraryDisplayPreferences = new ItemDisplayPreferences(displayPreferences.UserId, itemId, displayPreferences.Client)
+                        var libraryDisplayPreferences = new ItemDisplayPreferences(displayPreferences.UserId, landingItemId, displayPreferences.Client)
                         {
                             SortBy = dto.SortBy ?? "SortName",
                             SortOrder = dto.SortOrder,
@@ -151,7 +184,19 @@ namespace Jellyfin.Server.Migrations.Routines
                             libraryDisplayPreferences.ViewType = viewType;
                         }
 
+                        dto.CustomPrefs.Remove(key);
                         dbContext.ItemDisplayPreferences.Add(libraryDisplayPreferences);
+                    }
+
+                    foreach (var (key, value) in dto.CustomPrefs)
+                    {
+                        // Custom display preferences can have a key collision.
+                        var indexKey = $"{displayPreferences.UserId}|{itemId}|{displayPreferences.Client}|{key}";
+                        if (!customDisplayPrefs.Contains(indexKey))
+                        {
+                            dbContext.Add(new CustomItemDisplayPreferences(displayPreferences.UserId, itemId, displayPreferences.Client, key, value));
+                            customDisplayPrefs.Add(indexKey);
+                        }
                     }
 
                     dbContext.Add(displayPreferences);

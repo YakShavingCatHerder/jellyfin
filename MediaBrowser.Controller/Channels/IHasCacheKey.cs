@@ -9,6 +9,6 @@ namespace MediaBrowser.Controller.Channels
         /// </summary>
         /// <param name="userId">The user identifier.</param>
         /// <returns>System.String.</returns>
-        string GetCacheKey(string userId);
+        string? GetCacheKey(string? userId);
     }
 }

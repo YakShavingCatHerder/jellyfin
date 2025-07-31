@@ -1,3 +1,5 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
 using System;
@@ -5,13 +7,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Subtitles;
-using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Tasks;
@@ -60,11 +62,12 @@ namespace MediaBrowser.Providers.MediaInfo
             return _config.GetConfiguration<SubtitleOptions>("subtitles");
         }
 
-        public async Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
+        /// <inheritdoc />
+        public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
             var options = GetOptions();
 
-            var types = new[] { "Episode", "Movie" };
+            var types = new[] { BaseItemKind.Episode, BaseItemKind.Movie };
 
             var dict = new Dictionary<Guid, BaseItem>();
 
@@ -75,28 +78,25 @@ namespace MediaBrowser.Providers.MediaInfo
                 string[] subtitleDownloadLanguages;
                 bool skipIfEmbeddedSubtitlesPresent;
                 bool skipIfAudioTrackMatches;
-                bool requirePerfectMatch;
 
-                if (libraryOptions.SubtitleDownloadLanguages == null)
+                if (libraryOptions.SubtitleDownloadLanguages is null)
                 {
                     subtitleDownloadLanguages = options.DownloadLanguages;
                     skipIfEmbeddedSubtitlesPresent = options.SkipIfEmbeddedSubtitlesPresent;
                     skipIfAudioTrackMatches = options.SkipIfAudioTrackMatches;
-                    requirePerfectMatch = options.RequirePerfectMatch;
                 }
                 else
                 {
                     subtitleDownloadLanguages = libraryOptions.SubtitleDownloadLanguages;
                     skipIfEmbeddedSubtitlesPresent = libraryOptions.SkipSubtitlesIfEmbeddedSubtitlesPresent;
                     skipIfAudioTrackMatches = libraryOptions.SkipSubtitlesIfAudioTrackMatches;
-                    requirePerfectMatch = libraryOptions.RequirePerfectSubtitleMatch;
                 }
 
                 foreach (var lang in subtitleDownloadLanguages)
                 {
                     var query = new InternalItemsQuery
                     {
-                        MediaTypes = new string[] { MediaType.Video },
+                        MediaTypes = new[] { MediaType.Video },
                         IsVirtualItem = false,
                         IncludeItemTypes = types,
                         DtoOptions = new DtoOptions(true),
@@ -171,7 +171,7 @@ namespace MediaBrowser.Providers.MediaInfo
             bool skipIfAudioTrackMatches;
             bool requirePerfectMatch;
 
-            if (libraryOptions.SubtitleDownloadLanguages == null)
+            if (libraryOptions.SubtitleDownloadLanguages is null)
             {
                 subtitleDownloadLanguages = options.DownloadLanguages;
                 skipIfEmbeddedSubtitlesPresent = options.SkipIfEmbeddedSubtitlesPresent;
@@ -197,6 +197,7 @@ namespace MediaBrowser.Providers.MediaInfo
                     subtitleDownloadLanguages,
                     libraryOptions.DisabledSubtitleFetchers,
                     libraryOptions.SubtitleFetcherOrder,
+                    true,
                     cancellationToken).ConfigureAwait(false);
 
             // Rescan
@@ -209,12 +210,13 @@ namespace MediaBrowser.Providers.MediaInfo
             return true;
         }
 
+        /// <inheritdoc />
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             return new[]
             {
                 // Every so often
-                new TaskTriggerInfo { Type = TaskTriggerInfo.TriggerInterval, IntervalTicks = TimeSpan.FromHours(24).Ticks}
+                new TaskTriggerInfo { Type = TaskTriggerInfoType.IntervalTrigger, IntervalTicks = TimeSpan.FromHours(24).Ticks }
             };
         }
     }

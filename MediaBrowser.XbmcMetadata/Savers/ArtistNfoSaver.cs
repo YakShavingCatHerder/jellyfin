@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Xml;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -13,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace MediaBrowser.XbmcMetadata.Savers
 {
     /// <summary>
-    /// Nfo saver for artsist.
+    /// Nfo saver for artist.
     /// </summary>
     public class ArtistNfoSaver : BaseNfoSaver
     {
@@ -58,7 +59,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
             {
                 var formatString = ConfigurationManager.GetNfoConfiguration().ReleaseDateFormat;
 
-                writer.WriteElementString("disbanded", artist.EndDate.Value.ToLocalTime().ToString(formatString, CultureInfo.InvariantCulture));
+                writer.WriteElementString("disbanded", artist.EndDate.Value.ToString(formatString, CultureInfo.InvariantCulture));
             }
 
             var albums = artist
@@ -67,9 +68,12 @@ namespace MediaBrowser.XbmcMetadata.Savers
             AddAlbums(albums, writer);
         }
 
-        private void AddAlbums(IList<BaseItem> albums, XmlWriter writer)
+        private void AddAlbums(IReadOnlyList<BaseItem> albums, XmlWriter writer)
         {
-            foreach (var album in albums)
+            foreach (var album in albums
+                .OrderBy(album => album.ProductionYear ?? 0)
+                .ThenBy(album => SortNameOrName(album))
+                .ThenBy(album => album.Name?.Trim()))
             {
                 writer.WriteStartElement("album");
 
@@ -88,16 +92,15 @@ namespace MediaBrowser.XbmcMetadata.Savers
         }
 
         /// <inheritdoc />
-        protected override List<string> GetTagsUsed(BaseItem item)
+        protected override IEnumerable<string> GetTagsUsed(BaseItem item)
         {
-            var list = base.GetTagsUsed(item);
-            list.AddRange(new string[]
+            foreach (var tag in base.GetTagsUsed(item))
             {
-                "album",
-                "disbanded"
-            });
+                yield return tag;
+            }
 
-            return list;
+            yield return "album";
+            yield return "disbanded";
         }
     }
 }

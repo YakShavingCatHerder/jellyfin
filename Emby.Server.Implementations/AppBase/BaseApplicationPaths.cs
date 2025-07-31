@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Jellyfin.Extensions;
 using MediaBrowser.Common.Configuration;
 
 namespace Emby.Server.Implementations.AppBase
@@ -10,8 +13,6 @@ namespace Emby.Server.Implementations.AppBase
     /// </summary>
     public abstract class BaseApplicationPaths : IApplicationPaths
     {
-        private string _dataPath;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="BaseApplicationPaths"/> class.
         /// </summary>
@@ -32,84 +33,91 @@ namespace Emby.Server.Implementations.AppBase
             ConfigurationDirectoryPath = configurationDirectoryPath;
             CachePath = cacheDirectoryPath;
             WebPath = webDirectoryPath;
-
-            DataPath = Path.Combine(ProgramDataPath, "data");
+            DataPath = Directory.CreateDirectory(Path.Combine(ProgramDataPath, "data")).FullName;
         }
 
-        /// <summary>
-        /// Gets the path to the program data folder.
-        /// </summary>
-        /// <value>The program data path.</value>
+        /// <inheritdoc/>
         public string ProgramDataPath { get; }
 
         /// <inheritdoc/>
         public string WebPath { get; }
 
-        /// <summary>
-        /// Gets the path to the system folder.
-        /// </summary>
-        /// <value>The path to the system folder.</value>
+        /// <inheritdoc/>
         public string ProgramSystemPath { get; } = AppContext.BaseDirectory;
 
-        /// <summary>
-        /// Gets the folder path to the data directory.
-        /// </summary>
-        /// <value>The data directory.</value>
-        public string DataPath
+        /// <inheritdoc/>
+        public string DataPath { get; }
+
+        /// <inheritdoc />
+        public string VirtualDataPath => "%AppDataPath%";
+
+        /// <inheritdoc/>
+        public string ImageCachePath => Path.Combine(CachePath, "images");
+
+        /// <inheritdoc/>
+        public string PluginsPath => Path.Combine(ProgramDataPath, "plugins");
+
+        /// <inheritdoc/>
+        public string PluginConfigurationsPath => Path.Combine(PluginsPath, "configurations");
+
+        /// <inheritdoc/>
+        public string LogDirectoryPath { get; }
+
+        /// <inheritdoc/>
+        public string ConfigurationDirectoryPath { get; }
+
+        /// <inheritdoc/>
+        public string SystemConfigurationFilePath => Path.Combine(ConfigurationDirectoryPath, "system.xml");
+
+        /// <inheritdoc/>
+        public string CachePath { get; set; }
+
+        /// <inheritdoc/>
+        public string TempDirectory => Path.Join(Path.GetTempPath(), "jellyfin");
+
+        /// <inheritdoc />
+        public string TrickplayPath => Path.Combine(DataPath, "trickplay");
+
+        /// <inheritdoc />
+        public string BackupPath => Path.Combine(DataPath, "backups");
+
+        /// <inheritdoc />
+        public virtual void MakeSanityCheckOrThrow()
         {
-            get => _dataPath;
-            private set => _dataPath = Directory.CreateDirectory(value).FullName;
+            CreateAndCheckMarker(ConfigurationDirectoryPath, "config");
+            CreateAndCheckMarker(LogDirectoryPath, "log");
+            CreateAndCheckMarker(PluginsPath, "plugin");
+            CreateAndCheckMarker(ProgramDataPath, "data");
+            CreateAndCheckMarker(CachePath, "cache");
+            CreateAndCheckMarker(DataPath, "data");
         }
 
         /// <inheritdoc />
-        public string VirtualDataPath { get; } = "%AppDataPath%";
+        public void CreateAndCheckMarker(string path, string markerName, bool recursive = false)
+        {
+            Directory.CreateDirectory(path);
 
-        /// <summary>
-        /// Gets the image cache path.
-        /// </summary>
-        /// <value>The image cache path.</value>
-        public string ImageCachePath => Path.Combine(CachePath, "images");
+            CheckOrCreateMarker(path, $".jellyfin-{markerName}", recursive);
+        }
 
-        /// <summary>
-        /// Gets the path to the plugin directory.
-        /// </summary>
-        /// <value>The plugins path.</value>
-        public string PluginsPath => Path.Combine(ProgramDataPath, "plugins");
+        private IEnumerable<string> GetMarkers(string path, bool recursive = false)
+        {
+            return Directory.EnumerateFiles(path, ".jellyfin-*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+        }
 
-        /// <summary>
-        /// Gets the path to the plugin configurations directory.
-        /// </summary>
-        /// <value>The plugin configurations path.</value>
-        public string PluginConfigurationsPath => Path.Combine(PluginsPath, "configurations");
+        private void CheckOrCreateMarker(string path, string markerName, bool recursive = false)
+        {
+            var otherMarkers = GetMarkers(path, recursive).FirstOrDefault(e => Path.GetFileName(e) != markerName);
+            if (otherMarkers != null)
+            {
+                throw new InvalidOperationException($"Exepected to find only {markerName} but found marker for {otherMarkers}.");
+            }
 
-        /// <summary>
-        /// Gets the path to the log directory.
-        /// </summary>
-        /// <value>The log directory path.</value>
-        public string LogDirectoryPath { get; }
-
-        /// <summary>
-        /// Gets the path to the application configuration root directory.
-        /// </summary>
-        /// <value>The configuration directory path.</value>
-        public string ConfigurationDirectoryPath { get; }
-
-        /// <summary>
-        /// Gets the path to the system configuration file.
-        /// </summary>
-        /// <value>The system configuration file path.</value>
-        public string SystemConfigurationFilePath => Path.Combine(ConfigurationDirectoryPath, "system.xml");
-
-        /// <summary>
-        /// Gets or sets the folder path to the cache directory.
-        /// </summary>
-        /// <value>The cache directory.</value>
-        public string CachePath { get; set; }
-
-        /// <summary>
-        /// Gets the folder path to the temp directory within the cache folder.
-        /// </summary>
-        /// <value>The temp directory.</value>
-        public string TempDirectory => Path.Combine(CachePath, "temp");
+            var markerPath = Path.Combine(path, markerName);
+            if (!File.Exists(markerPath))
+            {
+                FileHelper.CreateEmpty(markerPath);
+            }
+        }
     }
 }

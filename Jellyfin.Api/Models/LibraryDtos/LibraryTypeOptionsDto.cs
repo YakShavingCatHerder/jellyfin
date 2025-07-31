@@ -1,41 +1,37 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System;
+using System.Collections.Generic;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
 
-namespace Jellyfin.Api.Models.LibraryDtos
+namespace Jellyfin.Api.Models.LibraryDtos;
+
+/// <summary>
+/// Library type options dto.
+/// </summary>
+public class LibraryTypeOptionsDto
 {
     /// <summary>
-    /// Library type options dto.
+    /// Gets or sets the type.
     /// </summary>
-    public class LibraryTypeOptionsDto
-    {
-        /// <summary>
-        /// Gets or sets the type.
-        /// </summary>
-        public string? Type { get; set; }
+    public string? Type { get; set; }
 
-        /// <summary>
-        /// Gets or sets the metadata fetchers.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "MetadataFetchers", Justification = "Imported from ServiceStack")]
-        public LibraryOptionInfoDto[] MetadataFetchers { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the metadata fetchers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> MetadataFetchers { get; set; } = Array.Empty<LibraryOptionInfoDto>();
 
-        /// <summary>
-        /// Gets or sets the image fetchers.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "ImageFetchers", Justification = "Imported from ServiceStack")]
-        public LibraryOptionInfoDto[] ImageFetchers { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the image fetchers.
+    /// </summary>
+    public IReadOnlyList<LibraryOptionInfoDto> ImageFetchers { get; set; } = Array.Empty<LibraryOptionInfoDto>();
 
-        /// <summary>
-        /// Gets or sets the supported image types.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "SupportedImageTypes", Justification = "Imported from ServiceStack")]
-        public ImageType[] SupportedImageTypes { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the supported image types.
+    /// </summary>
+    public IReadOnlyList<ImageType> SupportedImageTypes { get; set; } = Array.Empty<ImageType>();
 
-        /// <summary>
-        /// Gets or sets the default image options.
-        /// </summary>
-        [SuppressMessage("Microsoft.Performance", "CA1819:ReturnArrays", MessageId = "DefaultImageOptions", Justification = "Imported from ServiceStack")]
-        public ImageOption[] DefaultImageOptions { get; set; } = null!;
-    }
+    /// <summary>
+    /// Gets or sets the default image options.
+    /// </summary>
+    public IReadOnlyList<ImageOption> DefaultImageOptions { get; set; } = Array.Empty<ImageOption>();
 }

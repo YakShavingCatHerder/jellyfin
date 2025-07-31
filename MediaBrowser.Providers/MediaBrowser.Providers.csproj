@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- ProjectGuid is only included as a requirement for SonarQube analysis -->
   <PropertyGroup>
@@ -8,7 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\MediaBrowser.Controller\MediaBrowser.Controller.csproj" />
     <ProjectReference Include="..\MediaBrowser.Model\MediaBrowser.Model.csproj" />
-    <ProjectReference Include="..\DvdLib\DvdLib.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,32 +15,38 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="3.1.7" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="3.1.7" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="3.1.7" />
-    <PackageReference Include="OptimizedPriorityQueue" Version="4.2.0" />
-    <PackageReference Include="PlaylistsNET" Version="1.1.2" />
-    <PackageReference Include="TvDbSharper" Version="3.2.1" />
+    <PackageReference Include="AsyncKeyedLock" />
+    <PackageReference Include="LrcParser" />
+    <PackageReference Include="MetaBrainz.MusicBrainz" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="PlaylistsNET" />
+    <PackageReference Include="z440.atl.core" />
+    <PackageReference Include="TMDbLib" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors Condition=" '$(Configuration)' == 'Release'">true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <!-- Code Analyzers-->
+  <!-- Code Analyzers -->
   <ItemGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <PackageReference Include="Microsoft.CodeAnalysis.FxCopAnalyzers" Version="2.9.8" PrivateAssets="All" />
-    <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
-    <PackageReference Include="StyleCop.Analyzers" Version="1.1.118" PrivateAssets="All" />
-    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" PrivateAssets="All" />
+    <PackageReference Include="IDisposableAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="SerilogAnalyzer" PrivateAssets="All" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="All" />
+    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" PrivateAssets="All" />
   </ItemGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <CodeAnalysisRuleSet>../jellyfin.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
 
   <ItemGroup>
     <None Remove="Plugins\AudioDb\Configuration\config.html" />
@@ -50,5 +55,9 @@
     <EmbeddedResource Include="Plugins\Omdb\Configuration\config.html" />
     <None Remove="Plugins\MusicBrainz\Configuration\config.html" />
     <EmbeddedResource Include="Plugins\MusicBrainz\Configuration\config.html" />
+    <None Remove="Plugins\StudioImages\Configuration\config.html" />
+    <EmbeddedResource Include="Plugins\StudioImages\Configuration\config.html" />
+    <None Remove="Plugins\Tmdb\Configuration\config.html" />
+    <EmbeddedResource Include="Plugins\Tmdb\Configuration\config.html" />
   </ItemGroup>
 </Project>

@@ -15,7 +15,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
         /// <summary>
         /// Initializes a new instance of the <see cref="BoxSetXmlParser"/> class.
         /// </summary>
-        /// <param name="logger">Instance of the <see cref="ILogger{BoxSetXmlParset}"/> interface.</param>
+        /// <param name="logger">Instance of the <see cref="ILogger{BoxSetXmlParser}"/> interface.</param>
         /// <param name="providerManager">Instance of the <see cref="IProviderManager"/> interface.</param>
         public BoxSetXmlParser(ILogger<BoxSetXmlParser> logger, IProviderManager providerManager)
             : base(logger, providerManager)
@@ -23,7 +23,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
         }
 
         /// <inheritdoc />
-        protected override void FetchDataFromXmlNode(XmlReader reader, MetadataResult<BoxSet> item)
+        protected override void FetchDataFromXmlNode(XmlReader reader, MetadataResult<BoxSet> itemResult)
         {
             switch (reader.Name)
             {
@@ -33,7 +33,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
                     {
                         using (var subReader = reader.ReadSubtree())
                         {
-                            FetchFromCollectionItemsNode(subReader, item);
+                            FetchFromCollectionItemsNode(subReader, itemResult);
                         }
                     }
                     else
@@ -44,7 +44,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
                     break;
 
                 default:
-                    base.FetchDataFromXmlNode(reader, item);
+                    base.FetchDataFromXmlNode(reader, itemResult);
                     break;
             }
         }
@@ -71,7 +71,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
                                 {
                                     var child = GetLinkedChild(subReader);
 
-                                    if (child != null)
+                                    if (child is not null)
                                     {
                                         list.Add(child);
                                     }

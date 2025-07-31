@@ -6,8 +6,10 @@ using AutoFixture;
 using AutoFixture.AutoMoq;
 using Jellyfin.Api.Auth;
 using Jellyfin.Api.Constants;
-using Jellyfin.Data.Entities;
-using Jellyfin.Data.Enums;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Enums;
+using MediaBrowser.Controller.Authentication;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -68,19 +70,19 @@ namespace Jellyfin.Api.Tests.Auth
         }
 
         [Fact]
-        public async Task HandleAuthenticateAsyncShouldFailOnSecurityException()
+        public async Task HandleAuthenticateAsyncShouldProvideNoResultOnAuthenticationException()
         {
             var errorMessage = _fixture.Create<string>();
 
             _jellyfinAuthServiceMock.Setup(
                     a => a.Authenticate(
                         It.IsAny<HttpRequest>()))
-                .Throws(new SecurityException(errorMessage));
+                .Throws(new AuthenticationException(errorMessage));
 
             var authenticateResult = await _sut.AuthenticateAsync();
 
             Assert.False(authenticateResult.Succeeded);
-            Assert.Equal(errorMessage, authenticateResult.Failure.Message);
+            Assert.True(authenticateResult.None);
         }
 
         [Fact]
@@ -99,7 +101,8 @@ namespace Jellyfin.Api.Tests.Auth
             var authorizationInfo = SetupUser();
             var authenticateResult = await _sut.AuthenticateAsync();
 
-            Assert.True(authenticateResult.Principal.HasClaim(ClaimTypes.Name, authorizationInfo.User.Username));
+            Assert.NotNull(authorizationInfo.User);
+            Assert.True(authenticateResult.Principal?.HasClaim(ClaimTypes.Name, authorizationInfo.User.Username));
         }
 
         [Theory]
@@ -110,8 +113,9 @@ namespace Jellyfin.Api.Tests.Auth
             var authorizationInfo = SetupUser(isAdmin);
             var authenticateResult = await _sut.AuthenticateAsync();
 
+            Assert.NotNull(authorizationInfo.User);
             var expectedRole = authorizationInfo.User.HasPermission(PermissionKind.IsAdministrator) ? UserRoles.Administrator : UserRoles.User;
-            Assert.True(authenticateResult.Principal.HasClaim(ClaimTypes.Role, expectedRole));
+            Assert.True(authenticateResult.Principal?.HasClaim(ClaimTypes.Role, expectedRole));
         }
 
         [Fact]
@@ -120,19 +124,23 @@ namespace Jellyfin.Api.Tests.Auth
             SetupUser();
             var authenticatedResult = await _sut.AuthenticateAsync();
 
-            Assert.Equal(_scheme.Name, authenticatedResult.Ticket.AuthenticationScheme);
+            Assert.Equal(_scheme.Name, authenticatedResult.Ticket?.AuthenticationScheme);
         }
 
         private AuthorizationInfo SetupUser(bool isAdmin = false)
         {
             var authorizationInfo = _fixture.Create<AuthorizationInfo>();
             authorizationInfo.User = _fixture.Create<User>();
+            authorizationInfo.User.AddDefaultPermissions();
+            authorizationInfo.User.AddDefaultPreferences();
             authorizationInfo.User.SetPermission(PermissionKind.IsAdministrator, isAdmin);
+            authorizationInfo.IsApiKey = false;
+            authorizationInfo.Token = "fake-token";
 
             _jellyfinAuthServiceMock.Setup(
                     a => a.Authenticate(
                         It.IsAny<HttpRequest>()))
-                .Returns(authorizationInfo);
+                .Returns(Task.FromResult(authorizationInfo));
 
             return authorizationInfo;
         }

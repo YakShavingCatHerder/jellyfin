@@ -1,17 +1,17 @@
-﻿#nullable enable
-
 using System;
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.Json;
+using Jellyfin.Extensions.Json;
 using MediaBrowser.Controller.Net;
-using MediaBrowser.Model.Net;
-using Microsoft.AspNetCore.Http;
+using MediaBrowser.Controller.Net.WebSocketMessages;
+using MediaBrowser.Controller.Net.WebSocketMessages.Outbound;
+using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Logging;
 
 namespace Emby.Server.Implementations.HttpServer
@@ -19,7 +19,7 @@ namespace Emby.Server.Implementations.HttpServer
     /// <summary>
     /// Class WebSocketConnection.
     /// </summary>
-    public class WebSocketConnection : IWebSocketConnection, IDisposable
+    public class WebSocketConnection : IWebSocketConnection
     {
         /// <summary>
         /// The logger.
@@ -36,90 +36,79 @@ namespace Emby.Server.Implementations.HttpServer
         /// </summary>
         private readonly WebSocket _socket;
 
+        private bool _disposed = false;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="WebSocketConnection" /> class.
         /// </summary>
         /// <param name="logger">The logger.</param>
         /// <param name="socket">The socket.</param>
+        /// <param name="authorizationInfo">The authorization information.</param>
         /// <param name="remoteEndPoint">The remote end point.</param>
-        /// <param name="query">The query.</param>
         public WebSocketConnection(
             ILogger<WebSocketConnection> logger,
             WebSocket socket,
-            IPAddress? remoteEndPoint,
-            IQueryCollection query)
+            AuthorizationInfo authorizationInfo,
+            IPAddress? remoteEndPoint)
         {
             _logger = logger;
             _socket = socket;
+            AuthorizationInfo = authorizationInfo;
             RemoteEndPoint = remoteEndPoint;
-            QueryString = query;
 
-            _jsonOptions = JsonDefaults.GetOptions();
-            LastActivityDate = DateTime.Now;
+            _jsonOptions = JsonDefaults.Options;
+            LastActivityDate = DateTime.UtcNow;
         }
 
         /// <inheritdoc />
         public event EventHandler<EventArgs>? Closed;
 
-        /// <summary>
-        /// Gets or sets the remote end point.
-        /// </summary>
+        /// <inheritdoc />
+        public AuthorizationInfo AuthorizationInfo { get; }
+
+        /// <inheritdoc />
         public IPAddress? RemoteEndPoint { get; }
 
-        /// <summary>
-        /// Gets or sets the receive action.
-        /// </summary>
-        /// <value>The receive action.</value>
+        /// <inheritdoc />
         public Func<WebSocketMessageInfo, Task>? OnReceive { get; set; }
 
-        /// <summary>
-        /// Gets the last activity date.
-        /// </summary>
-        /// <value>The last activity date.</value>
+        /// <inheritdoc />
         public DateTime LastActivityDate { get; private set; }
 
         /// <inheritdoc />
         public DateTime LastKeepAliveDate { get; set; }
 
-        /// <summary>
-        /// Gets or sets the query string.
-        /// </summary>
-        /// <value>The query string.</value>
-        public IQueryCollection QueryString { get; }
-
-        /// <summary>
-        /// Gets the state.
-        /// </summary>
-        /// <value>The state.</value>
+        /// <inheritdoc />
         public WebSocketState State => _socket.State;
 
-        /// <summary>
-        /// Sends a message asynchronously.
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="message">The message.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        public Task SendAsync<T>(WebSocketMessage<T> message, CancellationToken cancellationToken)
+        /// <inheritdoc />
+        public async Task SendAsync(OutboundWebSocketMessage message, CancellationToken cancellationToken)
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(message, _jsonOptions);
-            return _socket.SendAsync(json, WebSocketMessageType.Text, true, cancellationToken);
+            await _socket.SendAsync(json, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
-        public async Task ProcessAsync(CancellationToken cancellationToken = default)
+        public async Task SendAsync<T>(OutboundWebSocketMessage<T> message, CancellationToken cancellationToken)
+        {
+            var json = JsonSerializer.SerializeToUtf8Bytes(message, _jsonOptions);
+            await _socket.SendAsync(json, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public async Task ReceiveAsync(CancellationToken cancellationToken = default)
         {
             var pipe = new Pipe();
             var writer = pipe.Writer;
 
-            ValueWebSocketReceiveResult receiveresult;
+            ValueWebSocketReceiveResult receiveResult;
             do
             {
                 // Allocate at least 512 bytes from the PipeWriter
                 Memory<byte> memory = writer.GetMemory(512);
                 try
                 {
-                    receiveresult = await _socket.ReceiveAsync(memory, cancellationToken).ConfigureAwait(false);
+                    receiveResult = await _socket.ReceiveAsync(memory, cancellationToken).ConfigureAwait(false);
                 }
                 catch (WebSocketException ex)
                 {
@@ -127,7 +116,7 @@ namespace Emby.Server.Implementations.HttpServer
                     break;
                 }
 
-                int bytesRead = receiveresult.Count;
+                int bytesRead = receiveResult.Count;
                 if (bytesRead == 0)
                 {
                     break;
@@ -137,7 +126,7 @@ namespace Emby.Server.Implementations.HttpServer
                 writer.Advance(bytesRead);
 
                 // Make the data available to the PipeReader
-                FlushResult flushResult = await writer.FlushAsync().ConfigureAwait(false);
+                FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
                 if (flushResult.IsCompleted)
                 {
                     // The PipeReader stopped reading
@@ -146,13 +135,13 @@ namespace Emby.Server.Implementations.HttpServer
 
                 LastActivityDate = DateTime.UtcNow;
 
-                if (receiveresult.EndOfMessage)
+                if (receiveResult.EndOfMessage)
                 {
                     await ProcessInternal(pipe.Reader).ConfigureAwait(false);
                 }
-            } while (
-                (_socket.State == WebSocketState.Open || _socket.State == WebSocketState.Connecting)
-                && receiveresult.MessageType != WebSocketMessageType.Close);
+            }
+            while ((_socket.State == WebSocketState.Open || _socket.State == WebSocketState.Connecting)
+                && receiveResult.MessageType != WebSocketMessageType.Close);
 
             Closed?.Invoke(this, EventArgs.Empty);
 
@@ -172,80 +161,75 @@ namespace Emby.Server.Implementations.HttpServer
             ReadResult result = await reader.ReadAsync().ConfigureAwait(false);
             ReadOnlySequence<byte> buffer = result.Buffer;
 
-            if (OnReceive == null)
+            if (OnReceive is null)
             {
                 // Tell the PipeReader how much of the buffer we have consumed
                 reader.AdvanceTo(buffer.End);
                 return;
             }
 
-            WebSocketMessage<object>? stub;
+            InboundWebSocketMessage<object>? stub;
+            long bytesConsumed;
             try
             {
-
-                if (buffer.IsSingleSegment)
-                {
-                    stub = JsonSerializer.Deserialize<WebSocketMessage<object>>(buffer.FirstSpan, _jsonOptions);
-                }
-                else
-                {
-                    var buf = ArrayPool<byte>.Shared.Rent(Convert.ToInt32(buffer.Length));
-                    try
-                    {
-                        buffer.CopyTo(buf);
-                        stub = JsonSerializer.Deserialize<WebSocketMessage<object>>(buf, _jsonOptions);
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(buf);
-                    }
-                }
+                stub = DeserializeWebSocketMessage(buffer, out bytesConsumed);
             }
             catch (JsonException ex)
             {
                 // Tell the PipeReader how much of the buffer we have consumed
                 reader.AdvanceTo(buffer.End);
-                _logger.LogError(ex, "Error processing web socket message");
+                _logger.LogError(ex, "Error processing web socket message: {Data}", Encoding.UTF8.GetString(buffer));
                 return;
             }
 
-            if (stub == null)
+            if (stub is null)
             {
                 _logger.LogError("Error processing web socket message");
                 return;
             }
 
             // Tell the PipeReader how much of the buffer we have consumed
-            reader.AdvanceTo(buffer.End);
+            reader.AdvanceTo(buffer.GetPosition(bytesConsumed));
 
             _logger.LogDebug("WS {IP} received message: {@Message}", RemoteEndPoint, stub);
 
-            var info = new WebSocketMessageInfo
-            {
-                MessageType = stub.MessageType,
-                Data = stub.Data?.ToString(), // Data can be null
-                Connection = this
-            };
-
-            if (info.MessageType.Equals("KeepAlive", StringComparison.Ordinal))
+            if (stub.MessageType == SessionMessageType.KeepAlive)
             {
                 await SendKeepAliveResponse().ConfigureAwait(false);
             }
             else
             {
-                await OnReceive(info).ConfigureAwait(false);
+                try
+                {
+                    await OnReceive(
+                        new WebSocketMessageInfo
+                        {
+                            MessageType = stub.MessageType,
+                            Data = stub.Data?.ToString(), // Data can be null
+                            Connection = this
+                        }).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(exception, "Failed to process WebSocket message");
+                }
             }
         }
 
-        private Task SendKeepAliveResponse()
+        internal InboundWebSocketMessage<object>? DeserializeWebSocketMessage(ReadOnlySequence<byte> bytes, out long bytesConsumed)
+        {
+            var jsonReader = new Utf8JsonReader(bytes);
+            var ret = JsonSerializer.Deserialize<InboundWebSocketMessage<object>>(ref jsonReader, _jsonOptions);
+            bytesConsumed = jsonReader.BytesConsumed;
+            return ret;
+        }
+
+        private async Task SendKeepAliveResponse()
         {
             LastKeepAliveDate = DateTime.UtcNow;
-            return SendAsync(
-                new WebSocketMessage<string>
-                {
-                    MessageId = Guid.NewGuid(),
-                    MessageType = "KeepAlive"
-                }, CancellationToken.None);
+            await SendAsync(
+                new OutboundKeepAliveMessage(),
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -261,10 +245,39 @@ namespace Emby.Server.Implementations.HttpServer
         /// <param name="dispose"><c>true</c> to release both managed and unmanaged resources; <c>false</c> to release only unmanaged resources.</param>
         protected virtual void Dispose(bool dispose)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             if (dispose)
             {
                 _socket.Dispose();
             }
+
+            _disposed = true;
+        }
+
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore().ConfigureAwait(false);
+            Dispose(false);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Used to perform asynchronous cleanup of managed resources or for cascading calls to <see cref="DisposeAsync"/>.
+        /// </summary>
+        /// <returns>A ValueTask.</returns>
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
+            if (_socket.State == WebSocketState.Open)
+            {
+                await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "System Shutdown", CancellationToken.None).ConfigureAwait(false);
+            }
+
+            _socket.Dispose();
         }
     }
 }

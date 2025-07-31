@@ -2,6 +2,7 @@
 
 using System;
 using System.Linq;
+using Jellyfin.Extensions;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -16,15 +17,15 @@ namespace MediaBrowser.Controller.Entities
 
             var current = item.Tags;
 
-            if (!current.Contains(name, StringComparer.OrdinalIgnoreCase))
+            if (!current.Contains(name, StringComparison.OrdinalIgnoreCase))
             {
                 if (current.Length == 0)
                 {
-                    item.Tags = new[] { name };
+                    item.Tags = [name];
                 }
                 else
                 {
-                    item.Tags = current.Concat(new[] { name }).ToArray();
+                    item.Tags = [..current, name];
                 }
             }
         }

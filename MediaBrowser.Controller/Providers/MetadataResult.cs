@@ -1,25 +1,43 @@
-#pragma warning disable CS1591
+#nullable disable
 
-using System;
+#pragma warning disable CA1002, CA2227, CS1591
+
 using System.Collections.Generic;
-using System.Globalization;
+using System.Linq;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Model.Entities;
 
 namespace MediaBrowser.Controller.Providers
 {
     public class MetadataResult<T>
     {
-        public List<LocalImageInfo> Images { get; set; }
-
-        public List<UserItemData> UserDataList { get; set; }
+        // Images aren't always used so the allocation is a waste a lot of the time
+        private List<LocalImageInfo> _images;
+        private List<(string Url, ImageType Type)> _remoteImages;
+        private List<PersonInfo> _people;
 
         public MetadataResult()
         {
-            Images = new List<LocalImageInfo>();
             ResultLanguage = "en";
         }
 
-        public List<PersonInfo> People { get; set; }
+        public List<LocalImageInfo> Images
+        {
+            get => _images ??= [];
+            set => _images = value;
+        }
+
+        public List<(string Url, ImageType Type)> RemoteImages
+        {
+            get => _remoteImages ??= [];
+            set => _remoteImages = value;
+        }
+
+        public IReadOnlyList<PersonInfo> People
+        {
+            get => _people;
+            set => _people = value?.ToList();
+        }
 
         public bool HasMetadata { get; set; }
 
@@ -33,12 +51,9 @@ namespace MediaBrowser.Controller.Providers
 
         public void AddPerson(PersonInfo p)
         {
-            if (People == null)
-            {
-                People = new List<PersonInfo>();
-            }
+            People ??= new List<PersonInfo>();
 
-            PeopleHelper.AddPerson(People, p);
+            PeopleHelper.AddPerson(_people, p);
         }
 
         /// <summary>
@@ -46,42 +61,14 @@ namespace MediaBrowser.Controller.Providers
         /// </summary>
         public void ResetPeople()
         {
-            if (People == null)
+            if (People is null)
             {
                 People = new List<PersonInfo>();
             }
-
-            People.Clear();
-        }
-
-        public UserItemData GetOrAddUserData(string userId)
-        {
-            if (UserDataList == null)
+            else
             {
-                UserDataList = new List<UserItemData>();
+                _people.Clear();
             }
-
-            UserItemData userData = null;
-
-            foreach (var i in UserDataList)
-            {
-                if (string.Equals(userId, i.UserId.ToString("N", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase))
-                {
-                    userData = i;
-                }
-            }
-
-            if (userData == null)
-            {
-                userData = new UserItemData()
-                {
-                    UserId = new Guid(userId)
-                };
-
-                UserDataList.Add(userData);
-            }
-
-            return userData;
         }
     }
 }

@@ -3,6 +3,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Session;
 
 namespace MediaBrowser.Controller.Session
 {
@@ -23,6 +24,12 @@ namespace MediaBrowser.Controller.Session
         /// <summary>
         /// Sends the message.
         /// </summary>
-        Task SendMessage<T>(string name, Guid messageId, T data, CancellationToken cancellationToken);
+        /// <typeparam name="T">The type of data.</typeparam>
+        /// <param name="name">Name of message type.</param>
+        /// <param name="messageId">Message ID.</param>
+        /// <param name="data">Data to send.</param>
+        /// <param name="cancellationToken">CancellationToken for operation.</param>
+        /// <returns>A task.</returns>
+        Task SendMessage<T>(SessionMessageType name, Guid messageId, T data, CancellationToken cancellationToken);
     }
 }

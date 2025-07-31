@@ -1,67 +1,32 @@
 #pragma warning disable CS1591
 
 using System;
-using System.Collections.Generic;
-using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 
 namespace Jellyfin.Data
 {
     public static class DayOfWeekHelper
     {
-        public static List<DayOfWeek> GetDaysOfWeek(DynamicDayOfWeek day)
+        public static DayOfWeek[] GetDaysOfWeek(DynamicDayOfWeek day)
         {
-            var days = new List<DayOfWeek>(7);
-
-            if (day == DynamicDayOfWeek.Sunday
-                || day == DynamicDayOfWeek.Weekend
-                || day == DynamicDayOfWeek.Everyday)
+            return day switch
             {
-                days.Add(DayOfWeek.Sunday);
-            }
+                DynamicDayOfWeek.Everyday => new[] { DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday },
+                DynamicDayOfWeek.Weekday => new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday },
+                DynamicDayOfWeek.Weekend => new[] { DayOfWeek.Sunday, DayOfWeek.Saturday },
+                _ => new[] { (DayOfWeek)day }
+            };
+        }
 
-            if (day == DynamicDayOfWeek.Monday
-                || day == DynamicDayOfWeek.Weekday
-                || day == DynamicDayOfWeek.Everyday)
+        public static bool Contains(this DynamicDayOfWeek dynamicDayOfWeek, DayOfWeek dayOfWeek)
+        {
+            return dynamicDayOfWeek switch
             {
-                days.Add(DayOfWeek.Monday);
-            }
-
-            if (day == DynamicDayOfWeek.Tuesday
-                || day == DynamicDayOfWeek.Weekday
-                || day == DynamicDayOfWeek.Everyday)
-            {
-                days.Add(DayOfWeek.Tuesday);
-            }
-
-            if (day == DynamicDayOfWeek.Wednesday
-                || day == DynamicDayOfWeek.Weekday
-                || day == DynamicDayOfWeek.Everyday)
-            {
-                days.Add(DayOfWeek.Wednesday);
-            }
-
-            if (day == DynamicDayOfWeek.Thursday
-                || day == DynamicDayOfWeek.Weekday
-                || day == DynamicDayOfWeek.Everyday)
-            {
-                days.Add(DayOfWeek.Thursday);
-            }
-
-            if (day == DynamicDayOfWeek.Friday
-                || day == DynamicDayOfWeek.Weekday
-                || day == DynamicDayOfWeek.Everyday)
-            {
-                days.Add(DayOfWeek.Friday);
-            }
-
-            if (day == DynamicDayOfWeek.Saturday
-                || day == DynamicDayOfWeek.Weekend
-                || day == DynamicDayOfWeek.Everyday)
-            {
-                days.Add(DayOfWeek.Saturday);
-            }
-
-            return days;
+                DynamicDayOfWeek.Everyday => true,
+                DynamicDayOfWeek.Weekday => dayOfWeek is >= DayOfWeek.Monday and <= DayOfWeek.Friday,
+                DynamicDayOfWeek.Weekend => dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday,
+                _ => (DayOfWeek)dynamicDayOfWeek == dayOfWeek
+            };
         }
     }
 }

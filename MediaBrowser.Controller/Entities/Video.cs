@@ -1,3 +1,5 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
 using System;
@@ -7,6 +9,8 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
+using Jellyfin.Extensions;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Persistence;
@@ -26,6 +30,15 @@ namespace MediaBrowser.Controller.Entities
         ISupportsPlaceHolders,
         IHasMediaSources
     {
+        public Video()
+        {
+            AdditionalParts = Array.Empty<string>();
+            LocalAlternateVersions = Array.Empty<string>();
+            SubtitleFiles = Array.Empty<string>();
+            AudioFiles = Array.Empty<string>();
+            LinkedAlternateVersions = Array.Empty<LinkedChild>();
+        }
+
         [JsonIgnore]
         public string PrimaryVersionId { get; set; }
 
@@ -72,30 +85,6 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        public void SetPrimaryVersionId(string id)
-        {
-            if (string.IsNullOrEmpty(id))
-            {
-                PrimaryVersionId = null;
-            }
-            else
-            {
-                PrimaryVersionId = id;
-            }
-
-            PresentationUniqueKey = CreatePresentationUniqueKey();
-        }
-
-        public override string CreatePresentationUniqueKey()
-        {
-            if (!string.IsNullOrEmpty(PrimaryVersionId))
-            {
-                return PrimaryVersionId;
-            }
-
-            return base.CreatePresentationUniqueKey();
-        }
-
         [JsonIgnore]
         public override bool SupportsThemeMedia => true;
 
@@ -110,6 +99,12 @@ namespace MediaBrowser.Controller.Entities
         /// </summary>
         /// <value>The subtitle paths.</value>
         public string[] SubtitleFiles { get; set; }
+
+        /// <summary>
+        /// Gets or sets the audio paths.
+        /// </summary>
+        /// <value>The audio paths.</value>
+        public string[] AudioFiles { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether this instance has subtitles.
@@ -143,49 +138,11 @@ namespace MediaBrowser.Controller.Entities
         /// <value>The video3 D format.</value>
         public Video3DFormat? Video3DFormat { get; set; }
 
-        public string[] GetPlayableStreamFileNames()
-        {
-            var videoType = VideoType;
-
-            if (videoType == VideoType.Iso && IsoType == Model.Entities.IsoType.BluRay)
-            {
-                videoType = VideoType.BluRay;
-            }
-            else if (videoType == VideoType.Iso && IsoType == Model.Entities.IsoType.Dvd)
-            {
-                videoType = VideoType.Dvd;
-            }
-            else
-            {
-                return Array.Empty<string>();
-            }
-
-            throw new NotImplementedException();
-        }
-
         /// <summary>
         /// Gets or sets the aspect ratio.
         /// </summary>
         /// <value>The aspect ratio.</value>
         public string AspectRatio { get; set; }
-
-        public Video()
-        {
-            AdditionalParts = Array.Empty<string>();
-            LocalAlternateVersions = Array.Empty<string>();
-            SubtitleFiles = Array.Empty<string>();
-            LinkedAlternateVersions = Array.Empty<LinkedChild>();
-        }
-
-        public override bool CanDownload()
-        {
-            if (VideoType == VideoType.Dvd || VideoType == VideoType.BluRay)
-            {
-                return false;
-            }
-
-            return IsFileProtocol;
-        }
 
         [JsonIgnore]
         public override bool SupportsAddingToPlaylist => true;
@@ -214,17 +171,7 @@ namespace MediaBrowser.Controller.Entities
         [JsonIgnore]
         public override bool HasLocalAlternateVersions => LocalAlternateVersions.Length > 0;
 
-        public IEnumerable<Guid> GetAdditionalPartIds()
-        {
-            return AdditionalParts.Select(i => LibraryManager.GetNewItemId(i, typeof(Video)));
-        }
-
-        public IEnumerable<Guid> GetLocalAlternateVersionIds()
-        {
-            return LocalAlternateVersions.Select(i => LibraryManager.GetNewItemId(i, typeof(Video)));
-        }
-
-        public static ILiveTvManager LiveTvManager { get; set; }
+        public static IRecordingsManager RecordingsManager { get; set; }
 
         [JsonIgnore]
         public override SourceType SourceType
@@ -240,21 +187,6 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        protected override bool IsActiveRecording()
-        {
-            return LiveTvManager.GetActiveRecordingInfo(Path) != null;
-        }
-
-        public override bool CanDelete()
-        {
-            if (IsActiveRecording())
-            {
-                return false;
-            }
-
-            return base.CanDelete();
-        }
-
         [JsonIgnore]
         public bool IsCompleteMedia
         {
@@ -262,7 +194,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 if (SourceType == SourceType.Channel)
                 {
-                    return !Tags.Contains("livestream", StringComparer.OrdinalIgnoreCase);
+                    return !Tags.Contains("livestream", StringComparison.OrdinalIgnoreCase);
                 }
 
                 return !IsActiveRecording();
@@ -271,80 +203,6 @@ namespace MediaBrowser.Controller.Entities
 
         [JsonIgnore]
         protected virtual bool EnableDefaultVideoUserDataKeys => true;
-
-        public override List<string> GetUserDataKeys()
-        {
-            var list = base.GetUserDataKeys();
-
-            if (EnableDefaultVideoUserDataKeys)
-            {
-                if (ExtraType.HasValue)
-                {
-                    var key = this.GetProviderId(MetadataProvider.Tmdb);
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        list.Insert(0, GetUserDataKey(key));
-                    }
-
-                    key = this.GetProviderId(MetadataProvider.Imdb);
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        list.Insert(0, GetUserDataKey(key));
-                    }
-                }
-                else
-                {
-                    var key = this.GetProviderId(MetadataProvider.Imdb);
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        list.Insert(0, key);
-                    }
-
-                    key = this.GetProviderId(MetadataProvider.Tmdb);
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        list.Insert(0, key);
-                    }
-                }
-            }
-
-            return list;
-        }
-
-        private string GetUserDataKey(string providerId)
-        {
-            var key = providerId + "-" + ExtraType.ToString().ToLowerInvariant();
-
-            // Make sure different trailers have their own data.
-            if (RunTimeTicks.HasValue)
-            {
-                key += "-" + RunTimeTicks.Value.ToString(CultureInfo.InvariantCulture);
-            }
-
-            return key;
-        }
-
-        public IEnumerable<Video> GetLinkedAlternateVersions()
-        {
-            return LinkedAlternateVersions
-                .Select(GetLinkedChild)
-                .Where(i => i != null)
-                .OfType<Video>()
-                .OrderBy(i => i.SortName);
-        }
-
-        /// <summary>
-        /// Gets the additional parts.
-        /// </summary>
-        /// <returns>IEnumerable{Video}.</returns>
-        public IOrderedEnumerable<Video> GetAdditionalParts()
-        {
-            return GetAdditionalPartIds()
-                .Select(i => LibraryManager.GetItemById(i))
-                .Where(i => i != null)
-                .OfType<Video>()
-                .OrderBy(i => i.SortName);
-        }
 
         [JsonIgnore]
         public override string ContainingFolderPath
@@ -387,6 +245,153 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
+        /// <summary>
+        /// Gets a value indicating whether [is3 D].
+        /// </summary>
+        /// <value><c>true</c> if [is3 D]; otherwise, <c>false</c>.</value>
+        [JsonIgnore]
+        public bool Is3D => Video3DFormat.HasValue;
+
+        /// <summary>
+        /// Gets the type of the media.
+        /// </summary>
+        /// <value>The type of the media.</value>
+        [JsonIgnore]
+        public override MediaType MediaType => MediaType.Video;
+
+        public override List<string> GetUserDataKeys()
+        {
+            var list = base.GetUserDataKeys();
+
+            if (EnableDefaultVideoUserDataKeys)
+            {
+                if (ExtraType.HasValue)
+                {
+                    var key = this.GetProviderId(MetadataProvider.Tmdb);
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        list.Insert(0, GetUserDataKey(key));
+                    }
+
+                    key = this.GetProviderId(MetadataProvider.Imdb);
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        list.Insert(0, GetUserDataKey(key));
+                    }
+                }
+                else
+                {
+                    var key = this.GetProviderId(MetadataProvider.Imdb);
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        list.Insert(0, key);
+                    }
+
+                    key = this.GetProviderId(MetadataProvider.Tmdb);
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        list.Insert(0, key);
+                    }
+                }
+            }
+
+            return list;
+        }
+
+        public void SetPrimaryVersionId(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                PrimaryVersionId = null;
+            }
+            else
+            {
+                PrimaryVersionId = id;
+            }
+
+            PresentationUniqueKey = CreatePresentationUniqueKey();
+        }
+
+        public override string CreatePresentationUniqueKey()
+        {
+            if (!string.IsNullOrEmpty(PrimaryVersionId))
+            {
+                return PrimaryVersionId;
+            }
+
+            return base.CreatePresentationUniqueKey();
+        }
+
+        public override bool CanDownload()
+        {
+            if (VideoType == VideoType.Dvd || VideoType == VideoType.BluRay)
+            {
+                return false;
+            }
+
+            return IsFileProtocol;
+        }
+
+        protected override bool IsActiveRecording()
+        {
+            return RecordingsManager.GetActiveRecordingInfo(Path) is not null;
+        }
+
+        public override bool CanDelete()
+        {
+            if (IsActiveRecording())
+            {
+                return false;
+            }
+
+            return base.CanDelete();
+        }
+
+        public IEnumerable<Guid> GetAdditionalPartIds()
+        {
+            return AdditionalParts.Select(i => LibraryManager.GetNewItemId(i, typeof(Video)));
+        }
+
+        public IEnumerable<Guid> GetLocalAlternateVersionIds()
+        {
+            return LocalAlternateVersions.Select(i => LibraryManager.GetNewItemId(i, typeof(Video)));
+        }
+
+        private string GetUserDataKey(string providerId)
+        {
+            var key = providerId + "-" + ExtraType.ToString().ToLowerInvariant();
+
+            // Make sure different trailers have their own data.
+            if (RunTimeTicks.HasValue)
+            {
+                key += "-" + RunTimeTicks.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return key;
+        }
+
+        public IEnumerable<Video> GetLinkedAlternateVersions()
+        {
+            return LinkedAlternateVersions
+                .Select(GetLinkedChild)
+                .Where(i => i is not null)
+                .OfType<Video>()
+                .OrderBy(i => i.SortName);
+        }
+
+        /// <summary>
+        /// Gets the additional parts.
+        /// </summary>
+        /// <returns>IEnumerable{Video}.</returns>
+        public IOrderedEnumerable<Video> GetAdditionalParts()
+        {
+            return GetAdditionalPartIds()
+                .Select(i => LibraryManager.GetItemById(i))
+                .Where(i => i is not null)
+                .OfType<Video>()
+                .OrderBy(i => i.SortName);
+        }
+
         internal override ItemUpdateType UpdateFromResolvedItem(BaseItem newItem)
         {
             var updateType = base.UpdateFromResolvedItem(newItem);
@@ -415,46 +420,7 @@ namespace MediaBrowser.Controller.Entities
             return updateType;
         }
 
-        public static string[] QueryPlayableStreamFiles(string rootPath, VideoType videoType)
-        {
-            if (videoType == VideoType.Dvd)
-            {
-                return FileSystem.GetFiles(rootPath, new[] { ".vob" }, false, true)
-                    .OrderByDescending(i => i.Length)
-                    .ThenBy(i => i.FullName)
-                    .Take(1)
-                    .Select(i => i.FullName)
-                    .ToArray();
-            }
-
-            if (videoType == VideoType.BluRay)
-            {
-                return FileSystem.GetFiles(rootPath, new[] { ".m2ts" }, false, true)
-                    .OrderByDescending(i => i.Length)
-                    .ThenBy(i => i.FullName)
-                    .Take(1)
-                    .Select(i => i.FullName)
-                    .ToArray();
-            }
-
-            return Array.Empty<string>();
-        }
-
-        /// <summary>
-        /// Gets a value indicating whether [is3 D].
-        /// </summary>
-        /// <value><c>true</c> if [is3 D]; otherwise, <c>false</c>.</value>
-        [JsonIgnore]
-        public bool Is3D => Video3DFormat.HasValue;
-
-        /// <summary>
-        /// Gets the type of the media.
-        /// </summary>
-        /// <value>The type of the media.</value>
-        [JsonIgnore]
-        public override string MediaType => Model.Entities.MediaType.Video;
-
-        protected override async Task<bool> RefreshedOwnedItems(MetadataRefreshOptions options, List<FileSystemMetadata> fileSystemChildren, CancellationToken cancellationToken)
+        protected override async Task<bool> RefreshedOwnedItems(MetadataRefreshOptions options, IReadOnlyList<FileSystemMetadata> fileSystemChildren, CancellationToken cancellationToken)
         {
             var hasChanges = await base.RefreshedOwnedItems(options, fileSystemChildren, cancellationToken).ConfigureAwait(false);
 
@@ -490,7 +456,7 @@ namespace MediaBrowser.Controller.Entities
             foreach (var child in LinkedAlternateVersions)
             {
                 // Reset the cached value
-                if (child.ItemId.HasValue && child.ItemId.Value.Equals(Guid.Empty))
+                if (child.ItemId.IsNullOrEmpty())
                 {
                     child.ItemId = null;
                 }
@@ -504,7 +470,7 @@ namespace MediaBrowser.Controller.Entities
 
             var localAlternates = GetLocalAlternateVersionIds()
                 .Select(i => LibraryManager.GetItemById(i))
-                .Where(i => i != null);
+                .Where(i => i is not null);
 
             foreach (var item in localAlternates)
             {
@@ -525,7 +491,8 @@ namespace MediaBrowser.Controller.Entities
         {
             if (!IsInMixedFolder)
             {
-                return new[] {
+                return new[]
+                {
                     new FileSystemMetadata
                     {
                         FullName = ContainingFolderPath,
@@ -551,35 +518,35 @@ namespace MediaBrowser.Controller.Entities
             }).FirstOrDefault();
         }
 
-        protected override List<Tuple<BaseItem, MediaSourceType>> GetAllItemsForMediaSources()
+        protected override IEnumerable<(BaseItem Item, MediaSourceType MediaSourceType)> GetAllItemsForMediaSources()
         {
-            var list = new List<Tuple<BaseItem, MediaSourceType>>();
+            var list = new List<(BaseItem, MediaSourceType)>
+            {
+                (this, MediaSourceType.Default)
+            };
 
-            list.Add(new Tuple<BaseItem, MediaSourceType>(this, MediaSourceType.Default));
-            list.AddRange(GetLinkedAlternateVersions().Select(i => new Tuple<BaseItem, MediaSourceType>(i, MediaSourceType.Grouping)));
+            list.AddRange(GetLinkedAlternateVersions().Select(i => ((BaseItem)i, MediaSourceType.Grouping)));
 
             if (!string.IsNullOrEmpty(PrimaryVersionId))
             {
-                var primary = LibraryManager.GetItemById(PrimaryVersionId) as Video;
-                if (primary != null)
+                if (LibraryManager.GetItemById(PrimaryVersionId) is Video primary)
                 {
                     var existingIds = list.Select(i => i.Item1.Id).ToList();
-                    list.Add(new Tuple<BaseItem, MediaSourceType>(primary, MediaSourceType.Grouping));
-                    list.AddRange(primary.GetLinkedAlternateVersions().Where(i => !existingIds.Contains(i.Id)).Select(i => new Tuple<BaseItem, MediaSourceType>(i, MediaSourceType.Grouping)));
+                    list.Add((primary, MediaSourceType.Grouping));
+                    list.AddRange(primary.GetLinkedAlternateVersions().Where(i => !existingIds.Contains(i.Id)).Select(i => ((BaseItem)i, MediaSourceType.Grouping)));
                 }
             }
 
             var localAlternates = list
                 .SelectMany(i =>
                 {
-                    var video = i.Item1 as Video;
-                    return video == null ? new List<Guid>() : video.GetLocalAlternateVersionIds();
+                    return i.Item1 is Video video ? video.GetLocalAlternateVersionIds() : Enumerable.Empty<Guid>();
                 })
                 .Select(LibraryManager.GetItemById)
-                .Where(i => i != null)
+                .Where(i => i is not null)
                 .ToList();
 
-            list.AddRange(localAlternates.Select(i => new Tuple<BaseItem, MediaSourceType>(i, MediaSourceType.Default)));
+            list.AddRange(localAlternates.Select(i => (i, MediaSourceType.Default)));
 
             return list;
         }

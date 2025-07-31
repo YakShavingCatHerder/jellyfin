@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
     public abstract class BaseNfoProvider<T> : ILocalMetadataProvider<T>, IHasItemChangeMonitor
         where T : BaseItem, new()
     {
-        private IFileSystem _fileSystem;
+        private readonly IFileSystem _fileSystem;
 
         protected BaseNfoProvider(IFileSystem fileSystem)
         {
@@ -33,7 +34,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
 
             var file = GetXmlFile(info, directoryService);
 
-            if (file == null)
+            if (file is null)
             {
                 return Task.FromResult(result);
             }
@@ -42,7 +43,10 @@ namespace MediaBrowser.XbmcMetadata.Providers
 
             try
             {
-                result.Item = new T();
+                result.Item = new T
+                {
+                    IndexNumber = info.IndexNumber
+                };
 
                 Fetch(result, path, cancellationToken);
                 result.HasMetadata = true;
@@ -64,7 +68,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
         {
             var file = GetXmlFile(new ItemInfo(item), directoryService);
 
-            if (file == null)
+            if (file is null)
             {
                 return false;
             }
@@ -74,6 +78,6 @@ namespace MediaBrowser.XbmcMetadata.Providers
 
         protected abstract void Fetch(MetadataResult<T> result, string path, CancellationToken cancellationToken);
 
-        protected abstract FileSystemMetadata GetXmlFile(ItemInfo info, IDirectoryService directoryService);
+        protected abstract FileSystemMetadata? GetXmlFile(ItemInfo info, IDirectoryService directoryService);
     }
 }

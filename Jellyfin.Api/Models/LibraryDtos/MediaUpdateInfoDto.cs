@@ -1,19 +1,15 @@
-﻿namespace Jellyfin.Api.Models.LibraryDtos
+using System;
+using System.Collections.Generic;
+
+namespace Jellyfin.Api.Models.LibraryDtos;
+
+/// <summary>
+/// Media Update Info Dto.
+/// </summary>
+public class MediaUpdateInfoDto
 {
     /// <summary>
-    /// Media Update Info Dto.
+    /// Gets or sets the list of updates.
     /// </summary>
-    public class MediaUpdateInfoDto
-    {
-        /// <summary>
-        /// Gets or sets media path.
-        /// </summary>
-        public string? Path { get; set; }
-
-        /// <summary>
-        /// Gets or sets media update type.
-        /// Created, Modified, Deleted.
-        /// </summary>
-        public string? UpdateType { get; set; }
-    }
+    public IReadOnlyList<MediaUpdateInfoPathDto> Updates { get; set; } = Array.Empty<MediaUpdateInfoPathDto>();
 }

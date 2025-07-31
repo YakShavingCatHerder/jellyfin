@@ -47,11 +47,24 @@ namespace MediaBrowser.Common.Configuration
         void ReplaceConfiguration(BaseApplicationConfiguration newConfiguration);
 
         /// <summary>
+        /// Manually pre-loads a factory so that it is available pre system initialisation.
+        /// </summary>
+        /// <typeparam name="T">Class to register.</typeparam>
+        void RegisterConfiguration<T>()
+            where T : IConfigurationFactory;
+
+        /// <summary>
         /// Gets the configuration.
         /// </summary>
         /// <param name="key">The key.</param>
         /// <returns>System.Object.</returns>
         object GetConfiguration(string key);
+
+        /// <summary>
+        /// Gets the array of configuration stores.
+        /// </summary>
+        /// <returns>Array of ConfigurationStore.</returns>
+        ConfigurationStore[] GetConfigurationStores();
 
         /// <summary>
         /// Gets the type of the configuration.

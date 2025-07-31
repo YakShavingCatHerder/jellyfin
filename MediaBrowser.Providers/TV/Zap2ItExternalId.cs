@@ -4,7 +4,6 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
-using MediaBrowser.Providers.Plugins.TheTvdb;
 
 namespace MediaBrowser.Providers.TV
 {
@@ -18,9 +17,6 @@ namespace MediaBrowser.Providers.TV
 
         /// <inheritdoc />
         public ExternalIdMediaType? Type => null;
-
-        /// <inheritdoc />
-        public string UrlFormatString => "http://tvlistings.zap2it.com/overview.html?programSeriesId={0}";
 
         /// <inheritdoc />
         public bool Supports(IHasProviderIds item) => item is Series;

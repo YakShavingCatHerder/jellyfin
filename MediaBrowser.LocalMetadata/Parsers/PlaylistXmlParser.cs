@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Xml;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Controller.Providers;
 using Microsoft.Extensions.Logging;
@@ -23,19 +26,19 @@ namespace MediaBrowser.LocalMetadata.Parsers
         }
 
         /// <inheritdoc />
-        protected override void FetchDataFromXmlNode(XmlReader reader, MetadataResult<Playlist> result)
+        protected override void FetchDataFromXmlNode(XmlReader reader, MetadataResult<Playlist> itemResult)
         {
-            var item = result.Item;
+            var item = itemResult.Item;
 
             switch (reader.Name)
             {
                 case "PlaylistMediaType":
-                {
-                    item.PlaylistMediaType = reader.ReadElementContentAsString();
+                    if (Enum.TryParse<MediaType>(reader.ReadNormalizedString(), out var mediaType))
+                    {
+                        item.PlaylistMediaType = mediaType;
+                    }
 
                     break;
-                }
-
                 case "PlaylistItems":
 
                     if (!reader.IsEmptyElement)
@@ -53,7 +56,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
                     break;
 
                 default:
-                    base.FetchDataFromXmlNode(reader, result);
+                    base.FetchDataFromXmlNode(reader, itemResult);
                     break;
             }
         }
@@ -84,7 +87,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
                             {
                                 var child = GetLinkedChild(subReader);
 
-                                if (child != null)
+                                if (child is not null)
                                 {
                                     list.Add(child);
                                 }
@@ -94,10 +97,8 @@ namespace MediaBrowser.LocalMetadata.Parsers
                         }
 
                         default:
-                        {
                             reader.Skip();
                             break;
-                        }
                     }
                 }
                 else

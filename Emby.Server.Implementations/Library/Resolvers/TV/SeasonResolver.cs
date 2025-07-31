@@ -1,4 +1,7 @@
+#nullable disable
+
 using System.Globalization;
+using Emby.Naming.Common;
 using Emby.Naming.TV;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -10,24 +13,24 @@ namespace Emby.Server.Implementations.Library.Resolvers.TV
     /// <summary>
     /// Class SeasonResolver.
     /// </summary>
-    public class SeasonResolver : FolderResolver<Season>
+    public class SeasonResolver : GenericFolderResolver<Season>
     {
-        private readonly ILibraryManager _libraryManager;
         private readonly ILocalizationManager _localization;
         private readonly ILogger<SeasonResolver> _logger;
+        private readonly NamingOptions _namingOptions;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SeasonResolver"/> class.
         /// </summary>
-        /// <param name="libraryManager">The library manager.</param>
+        /// <param name="namingOptions">The naming options.</param>
         /// <param name="localization">The localization.</param>
         /// <param name="logger">The logger.</param>
         public SeasonResolver(
-            ILibraryManager libraryManager,
+            NamingOptions namingOptions,
             ILocalizationManager localization,
             ILogger<SeasonResolver> logger)
         {
-            _libraryManager = libraryManager;
+            _namingOptions = namingOptions;
             _localization = localization;
             _logger = logger;
         }
@@ -41,17 +44,18 @@ namespace Emby.Server.Implementations.Library.Resolvers.TV
         {
             if (args.Parent is Series series && args.IsDirectory)
             {
-                var namingOptions = ((LibraryManager)_libraryManager).GetNamingOptions();
+                var namingOptions = _namingOptions;
 
                 var path = args.Path;
 
-                var seasonParserResult = SeasonPathParser.Parse(path, true, true);
+                var seasonParserResult = SeasonPathParser.Parse(path, series.ContainingFolderPath, true, true);
 
                 var season = new Season
                 {
                     IndexNumber = seasonParserResult.SeasonNumber,
                     SeriesId = series.Id,
-                    SeriesName = series.Name
+                    SeriesName = series.Name,
+                    Path = seasonParserResult.IsSeasonFolder ? path : null
                 };
 
                 if (!season.IndexNumber.HasValue || !seasonParserResult.IsSeasonFolder)
@@ -59,36 +63,32 @@ namespace Emby.Server.Implementations.Library.Resolvers.TV
                     var resolver = new Naming.TV.EpisodeResolver(namingOptions);
 
                     var folderName = System.IO.Path.GetFileName(path);
-                    var testPath = "\\\\test\\" + folderName;
+                    var testPath = @"\\test\" + folderName;
 
                     var episodeInfo = resolver.Resolve(testPath, true);
 
-                    if (episodeInfo != null)
+                    if (episodeInfo?.EpisodeNumber is not null && episodeInfo.SeasonNumber.HasValue)
                     {
-                        if (episodeInfo.EpisodeNumber.HasValue && episodeInfo.SeasonNumber.HasValue)
-                        {
-                            _logger.LogDebug(
-                                "Found folder underneath series with episode number: {0}. Season {1}. Episode {2}",
-                                path,
-                                episodeInfo.SeasonNumber.Value,
-                                episodeInfo.EpisodeNumber.Value);
+                        _logger.LogDebug(
+                            "Found folder underneath series with episode number: {0}. Season {1}. Episode {2}",
+                            path,
+                            episodeInfo.SeasonNumber.Value,
+                            episodeInfo.EpisodeNumber.Value);
 
-                            return null;
-                        }
+                        return null;
                     }
                 }
 
-                if (season.IndexNumber.HasValue)
+                if (season.IndexNumber.HasValue && string.IsNullOrEmpty(season.Name))
                 {
                     var seasonNumber = season.IndexNumber.Value;
-
                     season.Name = seasonNumber == 0 ?
                         args.LibraryOptions.SeasonZeroDisplayName :
                         string.Format(
                             CultureInfo.InvariantCulture,
                             _localization.GetLocalizedString("NameSeasonNumber"),
                             seasonNumber,
-                            args.GetLibraryOptions().PreferredMetadataLanguage);
+                            args.LibraryOptions.PreferredMetadataLanguage);
                 }
 
                 return season;
